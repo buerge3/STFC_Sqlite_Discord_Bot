@@ -1,4 +1,11 @@
-# Work with Python 3.6
+#!/usr/bin/env python3
+#
+# FILENAME: vision-test.py
+# CREATED:  August 17, 2019
+# AUTHOR:   buerge3
+#
+# A discord bot for uploading STFC roster image data to a database
+# Usage: "python3 ./vision-test.py
 import discord
 from discord.ext import commands
 from discord import Status
@@ -21,11 +28,12 @@ import traceback
 
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
-#db_name = "LVE"
 x_percent = 14
 bot = commands.Bot(command_prefix='!')
 
-# CONNECTION SCRIPT
+# -----------------------------------------------------------------------------
+#                        DATABASE CONNECTION SCRIPT
+# -----------------------------------------------------------------------------
 def create_connection(db_file):
     """ create a database connection to the SQLite database
         specified by the db_file
@@ -43,10 +51,12 @@ def create_connection(db_file):
 
 conn = create_connection(db_name)
 
-@bot.command()
-async def ping(ctx):
-    await ctx.send('pong')
 
+# -----------------------------------------------------------------------------
+#                                    FUNCTIONS
+# -----------------------------------------------------------------------------
+# add_name_to_alias
+# @param name, the name to add to the alias table
 def add_name_to_alias(name):
     cur = conn.cursor()
     sql = '''SELECT value FROM __state WHERE name="key"'''
@@ -62,6 +72,8 @@ def add_name_to_alias(name):
     cur.execute(sql)
     return key
 
+# IsImage
+# @return true if the first command-line argument is an image
 def isImage(context, num):
     pic_ext = ['.jpg','.png','.jpeg']
     for ext in pic_ext:
@@ -69,6 +81,9 @@ def isImage(context, num):
             return True
     return False
 
+# getImage
+# @param url, a url to an image
+# fetch the image at the specified url and save it as 'latest.jpg'
 async def getImage(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -76,6 +91,33 @@ async def getImage(url):
             await f.write(await resp.read())
             await f.close()
 
+# get_rgb_filter
+# @param im, the STFC roster screenshot to find appropriate filter values for
+# @returns rgb, a three-element list consisting of the rgb values for the filter
+def get_rgb_filter(im):
+    width, height = im.size
+    rgb = [220, 220, 220]
+    for i in range(3):
+        im_rgb = im.crop((0, 0, width, math.floor(height/10)))
+        print("trying r=" + str(rgb[0]), ", g=" + str(rgb[1]) + ", b=" + str(rgb[2]))
+        apply_img_mask(im_rgb, rgb, x_percent)
+        word = pytesseract.image_to_string(im_rgb)
+        #print("I read: " + word)
+        if (bool(re.match(r"MEM", word))):
+            print("found a working filter!")
+            return rgb;
+        else:
+            rgb[0] -= 20
+            rgb[1] -= 20
+            rgb[2] -= 20
+    print("Unable to process screenshot")
+    return None
+
+# apply_img_mask
+# @param im, the image to apply a mask to
+# @param rgb, a three-element list consisting of the rgb values for the mask threshold
+# @param x_percent, what percentage of the width to crop off from the right. Used to
+#        remove STFC rank symbols for premier, commodore, etc
 def apply_img_mask(im, x_percent):
     pixdata = im.load()
     width, height = im.size
@@ -88,14 +130,17 @@ def apply_img_mask(im, x_percent):
                 pixdata[x,y] = (255, 255, 255);
             else:
                 pixdata[x,y] = (0,0,0,0)
-            #else:
-                #out.putpixel((x,y), (r,g,b))
 
+# process_image
+# @param im, an STFC roster screenshot
+# @param names_list, an empty list to populate with player names
+# @param level_list, an empty list to populate with player levels
+# @return True if success, False if an error occurred
 async def process_image(ctx, im, names_list, level_list):
     width, height = im.size
-    im_names = im.crop((0, 0, math.floor(width/2), height))
+    im_names = im.crop((0, math.floor(height/10), math.floor(width/2), height))
     names = pytesseract.image_to_string(im_names)
-    tmp_list = names.split('\n\n')
+    tmp_list = names.replace("|", "").split('\n\n')
     success = False
     __flag = False
     for tmp in tmp_list:
@@ -104,7 +149,7 @@ async def process_image(ctx, im, names_list, level_list):
             level_list.append(lv)
             names_list.append(name)
             success = True
-        elif (bool(re.match(r"^[0-9]+", tmp))):
+        elif (bool(re.match(r"^[0-9]+$", tmp))):
             level_list.append(tmp)
             __flag = True
         elif (__flag):
@@ -116,6 +161,9 @@ async def process_image(ctx, im, names_list, level_list):
         await ctx.send(msg)
     return True;
 
+# check_spelling
+# @param names_list, a list of player names to check the spelling of
+#         using the dictionary file 'STFC_dict.txt'
 async def check_spelling(ctx, names_list):
     spell = SpellChecker(language=None, case_sensitive=False)
     spell.word_frequency.load_text_file("STFC_dict.txt")
@@ -138,9 +186,14 @@ async def check_spelling(ctx, names_list):
                 await ctx.send("Unrecognized player name {} in row {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, i))
                 continue
 
+# store_in_db
+# @param names_list, a list of player names
+# @param lv_list, a list of player levels
+# @param power_list, a list of player power
+# @param which alliance the roster screenshot belongs to
 async def store_in_db(ctx, names_list, lv_list, power_list, team):
     for i in range(0, len(names_list)):
-        if i <= len(lv_list) and i <= len(power_list) and names_list[i] != "DELETE_ME":
+        if i < len(lv_list) and i < len(power_list) and names_list[i] != "DELETE_ME":
             cur = conn.cursor()
             sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i]);
             print(sql)
@@ -179,7 +232,14 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
             print(msg)
             await ctx.send(msg)
     conn.commit()
-    #conn.close()
+
+
+# -----------------------------------------------------------------------------
+#                     DISCORD BOT COMMANDS & EVENTS
+# -----------------------------------------------------------------------------
+@bot.command()
+async def ping(ctx):
+    await ctx.send('pong')
 
 # Add a player name to the dictionary. !add <player_name>
 @bot.command(description="Add a player name to the dictionary. !add <player_name>")
@@ -217,9 +277,12 @@ async def alliance(ctx, alliance_name):
                 await check_spelling(ctx, names_list)
                 width, height = im.size
                 power_list = []
-                im_power = im.crop((math.floor(width/2), 0, width, height))
+                im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
                 power = pytesseract.image_to_string(im_power)
-                power_list = power.split('\n\n')
+                power_list = power.split('\n')
+                for i in range(len(power_list)):
+                    power_list[i] = re.sub("[^0-9,]", "", power_list[i])
+                power_list = list(filter(None, power_list))
                 await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
                 await bot.change_presence(status=Status.online)
 
@@ -260,14 +323,14 @@ async def alias(ctx):
         conn.commit()
         await ctx.send("Created alias {} for player {}".format(args[0], args[1]))
 
-
-
 @bot.event
 async def on_ready():
     print("Logged in as " + bot.user.name)
 
-# MAIN SCRIPT
-#BOT_PREFIX = ("?", "!")
+
+# ------------------------------------------------------------------------------
+#                                 MAIN SCRIPT
+# ------------------------------------------------------------------------------
 f = open("secret.txt", "r")
 TOKEN = f.read()
 bot.run(TOKEN)
