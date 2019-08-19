@@ -24,7 +24,8 @@ import aiofiles
 import datetime
 import re
 
-import traceback
+#import traceback
+import logging
 
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
@@ -42,10 +43,10 @@ def create_connection(db_file):
     """
     try:
         conn = sqlite3.connect(db_file)
-        print("connected to " + db_file);
+        logging.info("connected to " + db_file);
         return conn
     except Error as e:
-        print(e)
+        logging.error(e, exc_info=True)
  
     return None
 
@@ -60,15 +61,15 @@ conn = create_connection(db_name)
 def add_name_to_alias(name):
     cur = conn.cursor()
     sql = '''SELECT value FROM __state WHERE name="key"'''
-    print("SQL: " + sql)
+    logging.debug("SQL: " + sql)
     cur.execute(sql)
     key = cur.fetchone()[0]
     sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(key, name)
-    print("SQL: " + sql)
+    logging.debug("SQL: " + sql)
     cur.execute(sql)
     new_key = int(key) + 1
     sql = '''UPDATE __state SET value={} WHERE name="key"'''.format(new_key)
-    print("SQL: " + sql)
+    logging.debug("SQL: " + sql)
     cur.execute(sql)
     return key
 
@@ -99,18 +100,17 @@ def get_rgb_filter(im):
     rgb = [220, 220, 220]
     for i in range(3):
         im_rgb = im.crop((0, 0, width, math.floor(height/10)))
-        print("trying r=" + str(rgb[0]), ", g=" + str(rgb[1]) + ", b=" + str(rgb[2]))
+        logging.debug("trying r=" + str(rgb[0]), ", g=" + str(rgb[1]) + ", b=" + str(rgb[2]))
         apply_img_mask(im_rgb, rgb, x_percent)
         word = pytesseract.image_to_string(im_rgb)
-        #print("I read: " + word)
+        logging.debug("I read: " + word)
         if (bool(re.match(r"MEM", word))):
-            print("found a working filter!")
+            logging.debug("found a working filter!")
             return rgb;
         else:
             rgb[0] -= 20
             rgb[1] -= 20
             rgb[2] -= 20
-    print("Unable to process screenshot")
     return None
 
 # apply_img_mask
@@ -118,14 +118,14 @@ def get_rgb_filter(im):
 # @param rgb, a three-element list consisting of the rgb values for the mask threshold
 # @param x_percent, what percentage of the width to crop off from the right. Used to
 #        remove STFC rank symbols for premier, commodore, etc
-def apply_img_mask(im, x_percent):
+def apply_img_mask(im, rgb, x_percent):
     pixdata = im.load()
     width, height = im.size
     x_cutoff = math.floor(width / x_percent)
     for x in range(width):
         for y in range(height):
             r,g,b = im.getpixel((x,y))
-            if r < 220 or g < 220 or b < 220 or x < x_cutoff:
+            if r < rgb[0] or g < rgb[1] or b < rgb[2] or x < x_cutoff:
                 #out.putpixel((x,y), 0)
                 pixdata[x,y] = (255, 255, 255);
             else:
@@ -157,7 +157,7 @@ async def process_image(ctx, im, names_list, level_list):
             success = True
     if not success:
         msg = "Unable to process image, please try again."
-        print(msg + " MSG: " + tmp)
+        logging.error(msg + " MSG: " + tmp)
         await ctx.send(msg)
     return True;
 
@@ -173,17 +173,17 @@ async def check_spelling(ctx, names_list):
 
         if word in spell:
             names_list[i] = word
-            print(word + " is spelled correctly!")
+            logging.debug(word + " is spelled correctly!")
         else:
             cor = spell.correction(word)
             if (cor != word):
-                print("Corrected '{}' to '{}'".format(word, cor))
+                logging.debug("Corrected '{}' to '{}'".format(word, cor))
                 names_list[i] = cor;
             else:
-                print("Unrecognized player name " + word + " in row " + str(i))
-                print("If this is a new player, please add them to the dictionary by doing '!add <player name>'")
+                msg = "Unrecognized player name {} in row {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, i)
+                logging.warning(msg)
+                await ctx.send(msg)
                 names_list[i] = "DELETE_ME"
-                await ctx.send("Unrecognized player name {} in row {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, i))
                 continue
 
 # store_in_db
@@ -196,7 +196,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
         if i < len(lv_list) and i < len(power_list) and names_list[i] != "DELETE_ME":
             cur = conn.cursor()
             sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i]);
-            print(sql)
+            logging.debug('SQL: ' + sql)
             cur.execute(sql)
             value_list = cur.fetchone()
             key = -1
@@ -206,12 +206,12 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                 key = value_list[0]
 
             sql = '''SELECT * FROM LVE WHERE PlayerKey={} AND Date="{}"'''.format(key, datetime.datetime.now().strftime("%Y-%m-%d"))
-            print("SQL: " + sql)
+            logging.debug("SQL: " + sql)
             cur.execute(sql)
             value_list = cur.fetchone()
             if value_list is not None:
                 err_msg = "Data for player {} has already been entered today. Skipping this player...".format(names_list[i])
-                print(err_msg)
+                logging.warning(err_msg)
                 await ctx.send(err_msg)
                 continue
             try:
@@ -220,59 +220,89 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                     team,
                     int(lv_list[i]),
                     int(power_list[i].replace(',', '')))
-                print("SQL: " + sql)
+                logging.debug("SQL: " + sql)
                 cur.execute(sql)
             except ValueError:
                 err_msg = "Cannot interpret the power of player " + names_list[i] + " as an integer."
-                print(err_msg + " ERR: " + traceback.format_exc())
+                logging.warning(err_msg, exc_info=True)
                 await ctx.send(err_msg)
                 continue
 
             msg = "Name: " + names_list[i] + ",\tLv: " + lv_list[i] + ",\tPower: " + power_list[i]
-            print(msg)
+            logging.info(msg)
             await ctx.send(msg)
     conn.commit()
 
+# init_logger
+# initialize the logger to output msgs of lv INFO or higher to the console,
+# and write messages of DEBUG or higher to a log file
+def init_logger():
+    logfile_name = datetime.datetime.now().strftime("%d-%m-%Y_%I-%M-%S_%p")
+    #logging.basicConfig(filename='logs/'+logfile_name, filemode='w', format='[%(asctime)s] %(levelname)s: %(message)s')
+    logFormatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+    rootLogger = logging.getLogger()
+    rootLogger.setLevel(logging.DEBUG)
+    fileHandler = logging.FileHandler("{}/{}.log".format('logs', logfile_name))
+    fileHandler.setFormatter(logFormatter)
+    fileHandler.setLevel(logging.DEBUG)
+    rootLogger.addHandler(fileHandler)
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logFormatter)
+    consoleHandler.setLevel(logging.WARNING)
+    rootLogger.addHandler(consoleHandler)
 
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
 @bot.command()
 async def ping(ctx):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'ping\'")
+    logging.info('pong')
     await ctx.send('pong')
 
 # Add a player name to the dictionary. !add <player_name>
 @bot.command(description="Add a player name to the dictionary. !add <player_name>")
 async def add(ctx):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'add\'")
     args = ctx.message.content[5:].split(' ')
     file = open("STFC_dict.txt", "a")
     for arg in args:
         file.write(arg + "\n")
-        await ctx.send('Added \'' + arg + '\' to the dictionary')
+        msg = 'Added \'' + arg + '\' to the dictionary'
+        logging.info(msg)
+        await ctx.send(msg)
     file.close()
 
 # Add new roster screenshot data. !alliance <alliance_name> [attachment=image]
 @bot.command(description="Add new roster screenshot data.")
 async def alliance(ctx, alliance_name):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'alliance\'")
     await bot.change_presence(status=Status.dnd)
-    #args = ctx.message.content[10:].split(' ')
     num_attachments = len(ctx.message.attachments)
-    #if len(allaince_name) < 1:
-    #    await ctx.send('Please specify an alliance')
     if num_attachments < 1:
-        await ctx.send('Please include a roster screenshot')
+        msg = 'Please include a roster screenshot'
+        logging.error(msg)
+        await ctx.send(msg)
     else:
         for i in range(num_attachments):
-            print("Looking at image " + str(i) + " of " + str(num_attachments))
+            logging.debug("Looking at image " + str(i) + " of " + str(num_attachments))
             if not isImage(ctx, i):
-                await ctx.send('Please only submit images. Stopping...')
+                msg = 'Please only submit images. Stopping...'
+                logging.error(msg)
+                await ctx.send(msg)
                 return False
             im_url = ctx.message.attachments[i].url
             await getImage(im_url)
             im = Image.open('latest.jpg')
             names_list = []
             level_list = []
-            apply_img_mask(im, x_percent)
+            rgb = get_rgb_filter(im)
+            if rgb is None:
+                msg = "Unable to process screenshot"
+                logging.error(msg)
+                await ctx.send(msg)
+                return False
+            apply_img_mask(im, rgb, x_percent)
             if (await process_image(ctx, im, names_list, level_list)):
                 await check_spelling(ctx, names_list)
                 width, height = im.size
@@ -290,47 +320,55 @@ async def alliance(ctx, alliance_name):
 # Add a new alias. !alias <new_name> <old_name>
 @bot.command()
 async def alias(ctx):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
     args = ctx.message.content[7:].split(' ')
     cur = conn.cursor()
     if (len(args) < 2):
-        await ctx.send("Not enough arguments. Please add an alias using the format !alias <new_name> <old_name>")
+        msg = "Not enough arguments. Please add an alias using the format !alias <new_name> <old_name>"
+        logging.error(msg)
+        await ctx.send(msg)
         return False
     new_name = args[0].lower()
     old_name = args[1].lower()
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name)
-    print("SQL: " + sql)
+    logging.debug("SQL: " + sql)
     cur.execute(sql)
     value_list = cur.fetchone()
     if value_list is None:
         #add_name_to_alias(args[0])
-        await ctx.send("The player \"" + args[1] + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>")
+        msg = "The player \"" + args[1] + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
+        debug.error(msg)
+        await ctx.send(msg)
     else:
         key = value_list[0]
         # check if the new name already exists in the database
         sql = '''SELECT key FROM alias WHERE name="{}"'''.format(new_name)
-        print("SQL: " + sql)
+        logging.debug("SQL: " + sql)
         cur.execute(sql)
         value_list_2 = cur.fetchone()
         if value_list_2 is None:
             sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(key, new_name)
-            print("SQL: " + sql)
+            logging.debug("SQL: " + sql)
             cur.execute(sql)
         else:
             sql = '''UPDATE alias SET key={} WHERE name="{}"'''.format(key, new_name)
-            print("SQL: " + sql)
+            logging.debug("SQL: " + sql)
             cur.execute(sql)
 
         conn.commit()
-        await ctx.send("Created alias {} for player {}".format(args[0], args[1]))
+        msg = "Created alias {} for player {}".format(args[0], args[1])
+        logging.info(msg)
+        await ctx.send(msg)
 
 @bot.event
 async def on_ready():
-    print("Logged in as " + bot.user.name)
+    logging.info("Logged in as " + bot.user.name)
 
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
 # ------------------------------------------------------------------------------
+init_logger()
 f = open("secret.txt", "r")
 TOKEN = f.read()
 bot.run(TOKEN)
