@@ -360,6 +360,24 @@ async def alias(ctx):
         logging.info(msg)
         await ctx.send(msg)
 
+@bot.command()
+async def time(ctx):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'time\'")
+    midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
+    time_diff = (midnight - datetime.datetime.now()).seconds;
+    hours, remainder = divmod(time_diff, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    #msg = "The current time is " + datetime.datetime.now().strftime("%H:%M:%S") +"\n"
+    msg=""
+    if (time_diff > 3600):
+        msg = "The next reset is in " + str(hours) + " hours and " + str(minutes+1) + " minutes"
+    elif (time_diff > 60):
+        msg = "The next reset is in " + str(minutes+1) + " minutes"
+    else:
+        msg = "The next reset in " + str(seconds) + " seconds" 
+    logging.info(msg)
+    await ctx.send(msg)
+
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
