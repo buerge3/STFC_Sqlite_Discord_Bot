@@ -11,21 +11,20 @@ from discord import Status
 import sqlite3
 from sqlite3 import Error
 
+import logging
+
 import time
 import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from dateutil import parser
 from matplotlib import style
-style.use ('fivethirtyeight')
-
-f = open("secret_plotty.txt", "r")
-TOKEN = f.read()
 
 # MODIFIABLE PARAMTERS
 db_name = "LVE.db"
 token_file = "secret_plotty.txt"
-BOT_PREFIX = ("?")
+img_save_name = "latest-plotty.png"
+BOT_PREFIX = ("!","?")
 bot = commands.Bot(command_prefix=BOT_PREFIX)
 
 # -----------------------------------------------------------------------------
@@ -39,42 +38,73 @@ def create_connection(db_file):
     """
     try:
         conn = sqlite3.connect(db_file)
-        print("connected to " + db_file);
+        logging.info("connected to " + db_file);
         return conn
     except Error as e:
-        print(e)
+        logging.error(e, exc_info=True)
  
     return None
 
 
-conn = create_connection("Fam Tracker")
+conn = create_connection(db_name)
+
+
+# -----------------------------------------------------------------------------
+#                                    FUNCTIONS
+# -----------------------------------------------------------------------------
+# init_logger
+# initialize the logger to output msgs of lv INFO or higher to the console,
+# and write messages of DEBUG or higher to a log file
+def init_logger():
+    logfile_name = datetime.datetime.now().strftime("%d-%m-%Y_%I-%M-%S_%p")
+    #logging.basicConfig(filename='logs/'+logfile_name, filemode='w', format='[%(asctime)s] %(levelname)s: %(message)s')
+    logFormatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+    rootLogger = logging.getLogger()
+    rootLogger.setLevel(logging.DEBUG)
+    fileHandler = logging.FileHandler("{}/{}.log".format('logs', logfile_name))
+    fileHandler.setFormatter(logFormatter)
+    fileHandler.setLevel(logging.DEBUG)
+    rootLogger.addHandler(fileHandler)
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setFormatter(logFormatter)
+    consoleHandler.setLevel(logging.WARNING)
+    rootLogger.addHandler(consoleHandler)
+
 
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
-@client.command(pass_context=True)
+@bot.command(description="Plot the growth of a single player. To compare the growth of different players, use the \"players\" command")
 async def player(ctx, ppl : str):
     cur = conn.cursor()
+
+    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
+    logging.debug("SQL: " + sql)
+    cur.execute(sql)
+    key = cur.fetchone()
+    if key is None:
+        msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
+        logging.warning(msg)
+        ctx.send(msg)
+        return
     #cur.execute("SELECT * FROM test1 WHERE Name=?", str(ppl))
-    cur.execute("SELECT * FROM (SELECT * FROM LVE UNION SELECT * FROM SCE UNION SELECT * FROM GLE UNION SELECT * FROM KILL UNION SELECT * FROM DKFT) WHERE Name=? ORDER BY Date DESC LIMIT 1", (ppl,))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey={} ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
+    cur.execute(sql)
 
     value_list = cur.fetchone()
     #msg = ''.join(str(v) for v in value_list)
     #msg = "The power of " + ppl + " is " + msg;
     msg = "**%s**\n  Last Updated: %s\n  Lv: %s\n  Power: %sk" % value_list 
-    print(msg);
-
-    #await client.say(msg)
+    logging.info(msg);
 
     dates = []
     values = []
 
-    cur.execute("SELECT * FROM (SELECT * FROM LVE UNION SELECT* FROM SCE UNION SELECT * FROM GLE UNION SELECT * FROM KILL UNION SELECT * FROM DKFT) WHERE Name=?", (ppl,))
+    cur.execute('''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey={}"'''.format(key))
 
     value_list = cur.fetchall()
 
     for row in value_list:
-        #print("is this a date?:", row[1])
         dates.append(parser.parse(row[1]))
         values.append(row[3])
 
@@ -87,14 +117,12 @@ async def player(ctx, ppl : str):
     ax.set_title("Power of " + ppl)
     ax.set_xlabel("Date")
     ax.set_ylabel("Power (in thousands)")
-    plt.savefig('latest.png', bbox_inches="tight")
+    plt.savefig(img_save_name, bbox_inches="tight")
     plt.close()
 
-    #await client.send_file(testbedChannel, "latest.png")
-    testbedChannel = get_channel(client.get_all_channels(), 'testbed')
-    await client.send_file(ctx.message.channel, "latest.png", content=msg)
+    await ctx.send(msg, file=discord.File(img_save_name))
 
-@client.command(pass_context=True)
+@bot.command(description="Plot the growth of multiple players")
 async def players(ctx, *argv):
     args = [];
     for arg in argv:
@@ -106,7 +134,16 @@ async def players(ctx, *argv):
     plt.style.use('dark_background')
     ax = fig.add_subplot(111)
     for i in range(len(argv)):
-        cur.execute("SELECT Date, Power FROM (SELECT * FROM LVE UNION SELECT* FROM SCE UNION SELECT * FROM GLE UNION SELECT * FROM KILL UNION SELECT * FROM DKFT) WHERE Name=?", (argv[i],))
+        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
+        logging.debug("SQL: " + sql)
+        cur.execute(sql)
+        key = cur.fetchone()
+        if key is None:
+            msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
+            logging.warning(msg)
+            ctx.send(msg)
+            continue
+        cur.execute('''SELECT Date, Power FROM LVE WHERE PlayerKey={}'''.format(key))
         value_list = cur.fetchall()
         dates = []
         values = []
@@ -120,37 +157,34 @@ async def players(ctx, *argv):
     ax.set_xlabel("Date")
     ax.set_ylabel("Power (in thousands)")
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-    plt.savefig('latest.png', bbox_inches="tight")
+    plt.savefig(img_save_name, bbox_inches="tight")
     plt.close()
 
-    testbedChannel = get_channel(client.get_all_channels(), 'testbed')
-    await client.send_file(ctx.message.channel, "latest.png")
+    await ctx.send(file=discord.File(img_save_name))
 
-@client.command(pass_context=True)
+'''
+@bot.command(description="Plot the growth of a single alliance. To compare the growth of different alliances, use the \"alliances\" command")
 async def alliance(ctx, name):
     cur = conn.cursor()
     #cur.execute("SELECT * FROM test1 WHERE Name=?", str(ppl))
-    cmd = "SELECT Date, count(*), SUM(Power) FROM " + name + " GROUP BY Date ORDER BY Date DESC LIMIT 1"
+    cmd = "SELECT Date, count(*), SUM(Power) FROM LVE WHERE alliance=" + name + " GROUP BY Date ORDER BY Date DESC LIMIT 1"
     cur.execute(cmd)
 
     value_list = cur.fetchone()
     #msg = ''.join(str(v) for v in value_list)
     #msg = "The power of " + ppl + " is " + msg;
     msg = "**" + name + "**\n  Last Updated: %s\n  Number of Players: %s\n  Total Power: %sk" % value_list 
-    print(msg);
-
-    #await client.say(msg)
+    logging.info(msg);
 
     dates = []
     values = []
 
-    cmd = "SELECT Date, SUM(Power) FROM " + name + " GROUP BY Date ORDER BY Date"
+    cmd = "SELECT Date, SUM(Power) FROM LVE WHERE alliance=" + name + " GROUP BY Date ORDER BY Date"
     cur.execute(cmd)
 
     value_list = cur.fetchall()
 
     for row in value_list:
-        #print("is this a date?:", row[1])
         dates.append(parser.parse(row[0]))
         values.append(row[1])
 
@@ -166,11 +200,9 @@ async def alliance(ctx, name):
     plt.savefig('latest.png', bbox_inches="tight")
     plt.close()
 
-    #await client.send_file(testbedChannel, "latest.png")
-    testbedChannel = get_channel(client.get_all_channels(), 'testbed')
-    await client.send_file(ctx.message.channel, "latest.png", content=msg)
+    await ctx.send(content=msg, file=discord.File(img_save_name))
 
-@client.command(pass_context=True)
+@bot.command(description="Plot the growth of multiple alliances in one chart")
 async def alliances(*argv):
     args = [];
     for arg in argv:
@@ -182,7 +214,7 @@ async def alliances(*argv):
     plt.style.use('dark_background')
     ax = fig.add_subplot(111)
     for i in range(len(argv)):
-        cur.execute("SELECT Date, SUM(Power) FROM " + argv[i] + " GROUP BY Date ORDER BY Date")
+        cur.execute("SELECT Date, SUM(Power) FROM LVE WHERE alliance=" + argv[i] + " GROUP BY Date ORDER BY Date")
         value_list = cur.fetchall()
         dates = []
         values = []
@@ -199,17 +231,18 @@ async def alliances(*argv):
     plt.savefig('latest.png', bbox_inches="tight")
     plt.close()
 
-    testbedChannel = get_channel(client.get_all_channels(), 'testbed')
-    await client.send_file(ctx.message.channel, "latest.png")
+    await ctx.send(file=discord.File(img_save_name))
 
-@client.event
+@bot.event
 async def on_ready():
-    print("Logged in as " + client.user.name)
+    logging.info("Logged in as " + bot.user.name)
+'''
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
 # ------------------------------------------------------------------------------
 init_logger()
+style.use ('fivethirtyeight')
 f = open(token_file, "r")
 TOKEN = f.read()
 bot.run(TOKEN)
