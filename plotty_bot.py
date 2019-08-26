@@ -1,6 +1,12 @@
-# Work with Python 3.6
+# CREATED:  August 17, 2019
+# AUTHOR:   buerge3
+#
+# A discord bot for plotting player and alliance growth
+# Usage: "python3 ./sqlite_bot.py
 import discord
-from discord.ext.commands import Bot
+from discord.ext import commands
+from discord import Status
+#from discord.ext.commands import Bot
 
 import sqlite3
 from sqlite3 import Error
@@ -13,14 +19,18 @@ from dateutil import parser
 from matplotlib import style
 style.use ('fivethirtyeight')
 
-BOT_PREFIX = ("?", "!")
-f = open("secret.txt", "r")
+f = open("secret_plotty.txt", "r")
 TOKEN = f.read()
 
-client = Bot(command_prefix=BOT_PREFIX)
-#testbedChannel = client.get_channel('585515464797716499');
+# MODIFIABLE PARAMTERS
+db_name = "LVE.db"
+token_file = "secret_plotty.txt"
+BOT_PREFIX = ("?")
+bot = commands.Bot(command_prefix=BOT_PREFIX)
 
-
+# -----------------------------------------------------------------------------
+#                        DATABASE CONNECTION SCRIPT
+# -----------------------------------------------------------------------------
 def create_connection(db_file):
     """ create a database connection to the SQLite database
         specified by the db_file
@@ -39,13 +49,9 @@ def create_connection(db_file):
 
 conn = create_connection("Fam Tracker")
 
-def get_channel(channels, channel_name):
-    for channel in client.get_all_channels():
-        #print(channel)
-        if channel.name == channel_name:
-            return channel
-    return None
-
+# -----------------------------------------------------------------------------
+#                     DISCORD BOT COMMANDS & EVENTS
+# -----------------------------------------------------------------------------
 @client.command(pass_context=True)
 async def player(ctx, ppl : str):
     cur = conn.cursor()
@@ -200,5 +206,10 @@ async def alliances(*argv):
 async def on_ready():
     print("Logged in as " + client.user.name)
 
-
-client.run(TOKEN)
+# ------------------------------------------------------------------------------
+#                                 MAIN SCRIPT
+# ------------------------------------------------------------------------------
+init_logger()
+f = open(token_file, "r")
+TOKEN = f.read()
+bot.run(TOKEN)

@@ -29,6 +29,7 @@ import logging
 
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
+token_file = "secret_vision.txt"
 x_percent = 14
 bot = commands.Bot(command_prefix='!')
 
@@ -403,6 +404,6 @@ async def on_ready():
 #                                 MAIN SCRIPT
 # ------------------------------------------------------------------------------
 init_logger()
-f = open("secret.txt", "r")
+f = open(token_file, "r")
 TOKEN = f.read()
 bot.run(TOKEN)
