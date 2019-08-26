@@ -81,7 +81,7 @@ def process_image(im, names_list, level_list):
     success = False
     __flag = False
     for tmp in tmp_list:
-        if (bool(re.match(r"^[0-9]+ [a-zA-Z0-9]", tmp))):
+        if (bool(re.match(r"^[0-9]+ \S", tmp))):
             lv, name = tmp.split(' ', 1)
             level_list.append(lv)
             names_list.append(name)
@@ -92,9 +92,21 @@ def process_image(im, names_list, level_list):
         elif (__flag):
             names_list.append(tmp)
             success = True
+        else:
+            names_list.append("DELETE_ME")
+            level_list.append(0)
     if not success:
-        msg = "Unable to process image, please try again."
-        print(msg + " MSG: " + tmp)
+        msg = "Unable to process image; cause: did not identify any rows";
+        print(msg)
+    if len(names_list) != len(level_list):
+        msg = "Unable to process image; cause: did not identify exactly one level for each name"
+        print(msg)
+        print("NAMES:")
+        for name in names_list:
+            print(name)
+        print("LEVELS:")
+        for lv in level_list:
+            print(lv)
     return True;
 
 # check_spelling
@@ -105,6 +117,8 @@ def check_spelling(names_list):
     spell.word_frequency.load_text_file("STFC_dict.txt")
     
     for i in range(len(names_list)):
+        if (names_list[i] == "DELETE_ME"):
+            continue
         word = names_list[i].lower()
 
         if word in spell:
