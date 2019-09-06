@@ -211,11 +211,6 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 
     cur = conn.cursor()
 
-    # Delete any data currently stored in the backlog
-    del_backlog = '''DELETE FROM backlog''';
-    logging.debug("SQL: " + del_backlog)
-    cur.execute(del_backlog)
-
     # Store the data for each name in the database
     for i in range(0, len(names_list)):
         target = ""
@@ -357,6 +352,13 @@ async def alliance(ctx, alliance_name):
         logging.error(msg)
         await ctx.send(msg)
     else:
+
+        # Delete any data currently stored in the backlog
+        del_backlog = '''DELETE FROM backlog''';
+        logging.debug("SQL: " + del_backlog)
+        conn.cursor().execute(del_backlog)
+
+        # Process each attachment
         for i in range(num_attachments):
             logging.debug("Looking at image " + str(i) + " of " + str(num_attachments))
             if not isImage(ctx, i):
