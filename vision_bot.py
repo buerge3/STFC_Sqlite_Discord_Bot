@@ -24,7 +24,6 @@ import aiofiles
 import datetime
 import re
 
-#import traceback
 import logging
 
 # MODIFIABLE PARAMETERS
@@ -271,7 +270,7 @@ def init_logger():
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
-@bot.command()
+@bot.command(description="pong")
 async def ping(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'ping\'")
     logging.info('pong')
@@ -335,18 +334,18 @@ async def alliance(ctx, alliance_name):
 
 
 # Add a new alias. !alias <new_name> <old_name>
-@bot.command()
-async def alias(ctx):
+@bot.command(description="Add a new alias")
+async def alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
     args = ctx.message.content[7:].split(' ')
     cur = conn.cursor()
-    if (len(args) < 2):
+    '''if (len(args) < 2):
         msg = "Not enough arguments. Please add an alias using the format !alias <new_name> <old_name>"
         logging.error(msg)
         await ctx.send(msg)
         return False
     new_name = args[0].lower()
-    old_name = args[1].lower()
+    old_name = args[1].lower()'''
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name)
     logging.debug("SQL: " + sql)
     cur.execute(sql)
@@ -354,7 +353,7 @@ async def alias(ctx):
     if value_list is None:
         #add_name_to_alias(args[0])
         msg = "The player \"" + args[1] + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
-        debug.error(msg)
+        logging.error(msg)
         await ctx.send(msg)
     else:
         key = value_list[0]
