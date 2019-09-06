@@ -284,6 +284,7 @@ async def add(ctx):
     file = open("STFC_dict.txt", "a")
     for arg in args:
         file.write(arg + "\n")
+        add_name_to_alias(arg)
         msg = 'Added \'' + arg + '\' to the dictionary'
         logging.info(msg)
         await ctx.send(msg)
