@@ -17,6 +17,7 @@ import time
 import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.ticker as tkr
 from dateutil import parser
 from matplotlib import style
 
@@ -81,32 +82,38 @@ async def player(ctx, ppl : str):
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
     logging.debug("SQL: " + sql)
     cur.execute(sql)
-    key = cur.fetchone()
-    if key is None:
+    res = cur.fetchone()
+    key = -1
+    if res is None:
         msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
         logging.warning(msg)
-        ctx.send(msg)
+        await ctx.send(msg)
         return
+    else:
+        key = res[0]
     #cur.execute("SELECT * FROM test1 WHERE Name=?", str(ppl))
-    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey={} ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
+    logging.debug("SQL: " + sql)
     cur.execute(sql)
 
     value_list = cur.fetchone()
     #msg = ''.join(str(v) for v in value_list)
     #msg = "The power of " + ppl + " is " + msg;
-    msg = "**%s**\n  Last Updated: %s\n  Lv: %s\n  Power: %sk" % value_list 
-    logging.info(msg);
+    msg = "**%s**\n  Last Updated: %s\n  Lv: %s\n  Power: %s" % (ppl, value_list[0], value_list[1], '{:,}'.format(value_list[2]))
+    logging.info(msg)
 
     dates = []
     values = []
 
-    cur.execute('''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey={}"'''.format(key))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}"'''.format(str(key))
+    logging.debug("SQL: " + sql)
+    cur.execute(sql)
 
     value_list = cur.fetchall()
 
     for row in value_list:
-        dates.append(parser.parse(row[1]))
-        values.append(row[3])
+        dates.append(parser.parse(row[0]))
+        values.append(row[2])
 
 
     fig = plt.figure()
@@ -116,7 +123,9 @@ async def player(ctx, ppl : str):
     fig.autofmt_xdate()
     ax.set_title("Power of " + ppl)
     ax.set_xlabel("Date")
-    ax.set_ylabel("Power (in thousands)")
+    ax.set_ylabel("Power")
+    ax.get_yaxis().set_major_formatter(
+        tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
     plt.savefig(img_save_name, bbox_inches="tight")
     plt.close()
 
@@ -134,28 +143,37 @@ async def players(ctx, *argv):
     plt.style.use('dark_background')
     ax = fig.add_subplot(111)
     for i in range(len(argv)):
+        ppl = argv[i]
+        key = -1
         sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
         logging.debug("SQL: " + sql)
         cur.execute(sql)
-        key = cur.fetchone()
-        if key is None:
+        res = cur.fetchone()
+        key = -1
+        if res is None:
             msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
             logging.warning(msg)
-            ctx.send(msg)
-            continue
-        cur.execute('''SELECT Date, Power FROM LVE WHERE PlayerKey={}'''.format(key))
+            await ctx.send(msg)
+            return
+        else:
+            key = res[0]
+        sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}"'''.format(str(key))
+        logging.debug("SQL: " + sql)
+        cur.execute(sql)
         value_list = cur.fetchall()
         dates = []
         values = []
         for row in value_list:
             dates.append(parser.parse(row[0]))
-            values.append(row[1])
+            values.append(row[2])
         line, = ax.plot(dates, values, lw=2, label=argv[i])
 
     fig.autofmt_xdate()
     ax.set_title("Power of " + str(len(argv)) + " Players")
     ax.set_xlabel("Date")
-    ax.set_ylabel("Power (in thousands)")
+    ax.set_ylabel("Power")
+    ax.get_yaxis().set_major_formatter(
+        tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
     plt.savefig(img_save_name, bbox_inches="tight")
     plt.close()
