@@ -220,6 +220,8 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
         else:
             target="LVE"
 
+        if (names_list[i] == ""):
+            continue
         if i < len(lv_list) and i < len(power_list):
             sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i]);
             logging.debug('SQL: ' + sql)
@@ -335,10 +337,51 @@ async def add(ctx):
     file = open("STFC_dict.txt", "a")
     for arg in args:
         file.write(arg + "\n")
-        add_name_to_alias(arg)
+        #key = add_name_to_alias(arg)
         msg = 'Added \'' + arg + '\' to the dictionary'
         logging.info(msg)
         await ctx.send(msg)
+
+        # Get a key for the new entry, or the key for the old name if the name is already in the database
+        cur = conn.cursor()
+        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(arg);
+        logging.debug('SQL: ' + sql)
+        cur.execute(sql)
+        value_list = cur.fetchone()
+        key = -1
+        if value_list is None:
+            key = add_name_to_alias(arg)
+        else:
+            key = value_list[0]
+
+        # store the data in the backlog into the LVE db
+        sql = '''SELECT * FROM backlog WHERE PlayerKey={}'''.format(key)
+        logging.debug("SQL: " + sql)
+        cur.execute(sql)
+        value_list = cur.fetchone()
+        if value_list is not None:
+            try:
+                sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(value_list[0],
+                    value_list[1],
+                    value_list[2],
+                    int(value_list[3]),
+                    int(value_list[4]))
+                cur.execute(sql)
+                logging.debug("SQL: " + sql)
+                sql = '''DELETE FROM backlog WHERE PlayerKey={}'''.format(value_list[0])
+                cur.execute(sql)
+                logging.debug("SQL: " + sql)
+                conn.commit()
+            except ValueError:
+                err_msg = "Cannot interpret the power of player " + arg + " as an integer."
+                logging.warning(err_msg, exc_info=True)
+                await ctx.send(err_msg)
+
+        msg = "Name: " + new_name + ",\tLv: " + str(value_list[3]) + ",\tPower: " + str(value_list[4])
+        logging.info(msg)
+        await ctx.send(msg)
+
+
     file.close()
 
 # Add new roster screenshot data. !alliance <alliance_name> [attachment=image]
@@ -433,7 +476,7 @@ async def correct(ctx, new_name, old_name):
     file = open("STFC_dict.txt", "a")
     file.write(old_name + "\n")
     #add_name_to_alias(old_name)
-    msg = 'Added \'' + old_name+ '\' to the dictionary'
+    msg = 'Added \'' + new_name+ '\' to the dictionary'
     logging.info(msg)
     await ctx.send(msg)
 
