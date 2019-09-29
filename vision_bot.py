@@ -73,6 +73,15 @@ def add_name_to_alias(name):
     cur.execute(sql)
     return key
 
+async def add_name_to_dict(ctx, new_name):
+    # add incorrect name to dictionary
+    file = open("STFC_dict.txt", "a")
+    file.write(new_name + "\n")
+    #add_name_to_alias(old_name)
+    msg = 'Added \'' + new_name+ '\' to the dictionary'
+    logging.info(msg)
+    await ctx.send(msg)
+
 # IsImage
 # @return true if the first command-line argument is an image
 def isImage(context, num):
@@ -243,57 +252,69 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                 await ctx.send(err_msg)
                 continue
             try:
-                sql = '''INSERT INTO {} (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, key,
-                    datetime.datetime.now().strftime("%Y-%m-%d"),
-                    team,
-                    int(lv_list[i]),
-                    int(power_list[i].replace(',', '')))
-                logging.debug("SQL: " + str(sql))
-                cur.execute(sql)
+                if (target == "LVE"):
+                    sql = '''INSERT INTO {} (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, key,
+                        datetime.datetime.now().strftime("%Y-%m-%d"),
+                        team,
+                        int(lv_list[i]),
+                        int(str(power_list[i]).replace(',', '')))
+                    logging.debug("SQL: " + str(sql))
+                    cur.execute(sql)
+                else:
+                    #sql = '''INSERT INTO {} (Name, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, names_list[i],
+                    #    datetime.datetime.now().strftime("%Y-%m-%d"),
+                    #    team,
+                    #    int(lv_list[i]),
+                    #    int(power_list[i].replace(',', '')))
+                    await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, int(lv_list[i]), int(power_list[i].replace(',', ''))))
+                
             except ValueError:
                 err_msg = "Cannot interpret the power of player " + names_list[i] + " as an integer."
                 logging.warning(err_msg, exc_info=True)
                 await ctx.send(err_msg)
                 continue
 
-            msg = "Name: " + names_list[i] + ",\tLv: " + lv_list[i] + ",\tPower: " + power_list[i]
-            logging.info(msg)
-            await ctx.send(msg)
+            if target == "LVE":
+                msg = "Name: " + names_list[i] + ",\tLv: " + str(lv_list[i]) + ",\tPower: " + str(power_list[i])
+                logging.info(msg)
+                await ctx.send(msg)
     conn.commit()
 
+# func_alias
+# @param ctx, Discord msg context
+# @param new_name, player name string
+# @param old_name, player name string
 async def func_alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
     #args = ctx.message.content[7:].split(' ')
+    await add_name_to_dict(ctx, new_name);
     cur = conn.cursor()
-    '''if (len(args) < 2):
-        msg = "Not enough arguments. Please add an alias using the format !alias <new_name> <old_name>"
-        logging.error(msg)
-        await ctx.send(msg)
-        return False
-    new_name = args[0].lower()
-    old_name = args[1].lower()'''
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name)
     logging.debug("SQL: " + sql)
     cur.execute(sql)
     value_list = cur.fetchone()
     if value_list is None:
         #add_name_to_alias(args[0])
-        msg = "The player \"" + old_name + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
+        msg = "[ERROR] The player \"" + old_name + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
         logging.error(msg)
         await ctx.send(msg)
     else:
-        key = value_list[0]
+        old_name_key = value_list[0]
         # check if the new name already exists in the database
         sql = '''SELECT key FROM alias WHERE name="{}"'''.format(new_name)
         logging.debug("SQL: " + sql)
         cur.execute(sql)
         value_list_2 = cur.fetchone()
         if value_list_2 is None:
-            sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(key, new_name)
+            sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(old_name_key, new_name)
             logging.debug("SQL: " + sql)
             cur.execute(sql)
         else:
-            sql = '''UPDATE alias SET key={} WHERE name="{}"'''.format(key, new_name)
+            new_name_key = value_list_2[0]
+            sql = '''UPDATE alias SET key={} WHERE key="{}"'''.format(old_name_key, new_name_key)
+            logging.debug("SQL: " + sql)
+            cur.execute(sql)
+            sql = '''UPDATE LVE SET PlayerKey={} WHERE PlayerKey="{}"'''.format(old_name_key, new_name_key)
             logging.debug("SQL: " + sql)
             cur.execute(sql)
 
@@ -301,6 +322,41 @@ async def func_alias(ctx, new_name, old_name):
         msg = "Created alias {} for player {}".format(new_name, old_name)
         logging.info(msg)
         await ctx.send(msg)
+
+# store_in_backlog
+# @param player_data, a tuple containing name, date, alliance, lv, and power
+async def store_in_backlog(player_data):
+    cur = conn.cursor()
+    sql = '''INSERT INTO backlog (Name, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(player_data[0].lower(), player_data[1], player_data[2], player_data[3], player_data[4]);
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+
+
+async def store_in_db_from_backlog(ctx, names):
+    # Get a key for the new entry, or the key for the old name if the name is already in the database
+        cur = conn.cursor()
+        names_list = []
+        alliance = ""
+        lv_list = []
+        power_list = []
+
+        for name in names:
+            sql = '''SELECT * FROM backlog WHERE Name="{}"'''.format(name.lower())
+            logging.debug('SQL: ' + sql)
+            cur.execute(sql)
+            player_data_list = cur.fetchone()
+            if player_data_list is not None:
+                names_list.append(player_data_list[0])
+                alliance = player_data_list[2]
+                lv_list.append(player_data_list[3])
+                power_list.append(player_data_list[4])
+
+            sql = '''DELETE FROM backlog WHERE Name="{}"'''.format(name.lower())
+            logging.debug('SQL: ' + sql)
+            cur.execute(sql)
+
+        await store_in_db(ctx, names_list, lv_list, power_list, alliance);
+
 
 # init_logger
 # initialize the logger to output msgs of lv INFO or higher to the console,
@@ -336,11 +392,12 @@ async def add(ctx):
     args = ctx.message.content[5:].split(' ')
     file = open("STFC_dict.txt", "a")
     for arg in args:
-        file.write(arg + "\n")
+        '''file.write(arg + "\n")
         #key = add_name_to_alias(arg)
         msg = 'Added \'' + arg + '\' to the dictionary'
         logging.info(msg)
-        await ctx.send(msg)
+        await ctx.send(msg)'''
+        await add_name_to_dict(ctx, arg)
 
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         cur = conn.cursor()
@@ -355,32 +412,33 @@ async def add(ctx):
             key = value_list[0]
 
         # store the data in the backlog into the LVE db
-        sql = '''SELECT * FROM backlog WHERE PlayerKey={}'''.format(key)
-        logging.debug("SQL: " + sql)
-        cur.execute(sql)
-        value_list = cur.fetchone()
-        if value_list is not None:
-            try:
-                sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(value_list[0],
-                    value_list[1],
-                    value_list[2],
-                    int(value_list[3]),
-                    int(value_list[4]))
-                cur.execute(sql)
-                logging.debug("SQL: " + sql)
-                sql = '''DELETE FROM backlog WHERE PlayerKey={}'''.format(value_list[0])
-                cur.execute(sql)
-                logging.debug("SQL: " + sql)
-                conn.commit()
-            except ValueError:
-                err_msg = "Cannot interpret the power of player " + arg + " as an integer."
-                logging.warning(err_msg, exc_info=True)
-                await ctx.send(err_msg)
+        #sql = '''SELECT (Name, Date, Alliance, Lv, Power) FROM backlog WHERE Name="{}"'''.format(arg)
+        #logging.debug("SQL: " + sql)
+        #cur.execute(sql)
+        #value_list = cur.fetchone()
+        #if value_list is not None:
+        #    try:
+        #        sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(key,
+        #            value_list[1],
+        #            value_list[2],
+        #            int(value_list[3]),
+        #            int(value_list[4]))
+        #        cur.execute(sql)
+        #        logging.debug("SQL: " + sql)
+        #        #sql = '''DELETE FROM backlog WHERE PlayerKey={}'''.format(value_list[0])
+        #        #cur.execute(sql)
+        #        #logging.debug("SQL: " + sql)
+        #        conn.commit()
+        #
+        #        msg = "Name: " + value_list[0] + ",\tLv: " + str(value_list[3]) + ",\tPower: " + str(value_list[4])
+        #        logging.info(msg)
+        #        await ctx.send(msg)
+        #    except ValueError:
+        #        err_msg = "[ERROR] Cannot interpret the power of player " + arg + " as an integer."
+        #        logging.warning(err_msg, exc_info=True)
+        #        await ctx.send(err_msg)
 
-        msg = "Name: " + new_name + ",\tLv: " + str(value_list[3]) + ",\tPower: " + str(value_list[4])
-        logging.info(msg)
-        await ctx.send(msg)
-
+    await store_in_db_from_backlog(ctx, args);
 
     file.close()
 
@@ -438,7 +496,7 @@ async def alliance(ctx, alliance_name):
 # Add a new alias. !alias <new_name> <old_name>
 @bot.command(description="Add a new alias")
 async def alias(ctx, new_name, old_name):
-    func_alias(ctx, new_name, old_name)
+    await func_alias(ctx, new_name, old_name)
 
 @bot.command(description="Get the time until the next reset for entering data")
 async def time(ctx):
@@ -459,62 +517,28 @@ async def time(ctx):
     await ctx.send(msg)
 
 @bot.command(description="Correct a name in the backlog and submit the data for that player")
-async def correct(ctx, new_name, old_name):
+async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
-    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name);
+    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(correct_name_spelling);
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
     value_list = cur.fetchone()
     key = -1
     if value_list is None:
-        key = add_name_to_alias(old_name)
+        key = add_name_to_alias(correct_name_spelling)
     else:
         key = value_list[0]
 
     # add incorrect name to dictionary
-    file = open("STFC_dict.txt", "a")
-    file.write(old_name + "\n")
-    #add_name_to_alias(old_name)
-    msg = 'Added \'' + new_name+ '\' to the dictionary'
-    logging.info(msg)
-    await ctx.send(msg)
+    #await add_name_to_dict(ctx, incorrect_name_spelling)
 
     # make the correct name an alias of the incorrect name
-    if (new_name != old_name):
-        func_alias(ctx, new_name, old_name)
+    if (incorrect_name_spelling != correct_name_spelling):
+        await func_alias(ctx, incorrect_name_spelling, correct_name_spelling)
 
     # store the data in the backlog into the LVE db
-    sql = '''SELECT * FROM backlog WHERE PlayerKey={}'''.format(key)
-    logging.debug("SQL: " + sql)
-    cur.execute(sql)
-    value_list = cur.fetchone()
-    if value_list is None:
-        err_msg = "Data for player {} is not currently stored in the backlog.".format(old_name)
-        logging.warning(err_msg)
-        await ctx.send(err_msg)
-    try:
-        sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(value_list[0],
-            value_list[1],
-            value_list[2],
-            int(value_list[3]),
-            int(value_list[4]))
-        cur.execute(sql)
-        logging.debug("SQL: " + sql)
-        sql = '''DELETE FROM backlog WHERE PlayerKey={}'''.format(value_list[0])
-        cur.execute(sql)
-        logging.debug("SQL: " + sql)
-        conn.commit()
-    except ValueError:
-        err_msg = "Cannot interpret the power of player " + old_name + " as an integer."
-        logging.warning(err_msg, exc_info=True)
-        await ctx.send(err_msg)
-
-    msg = "Name: " + new_name + ",\tLv: " + str(value_list[3]) + ",\tPower: " + str(value_list[4])
-    logging.info(msg)
-    await ctx.send(msg)
-
-
+    await store_in_db_from_backlog(ctx, [incorrect_name_spelling]);
 
 @bot.event
 async def on_ready():
