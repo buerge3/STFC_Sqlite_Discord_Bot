@@ -64,7 +64,7 @@ def add_name_to_alias(name):
     logging.debug("SQL: " + sql)
     cur.execute(sql)
     key = cur.fetchone()[0]
-    sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(key, name)
+    sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(key, name.lower())
     logging.debug("SQL: " + sql)
     cur.execute(sql)
     new_key = int(key) + 1
@@ -232,7 +232,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
         if (names_list[i] == ""):
             continue
         if i < len(lv_list) and i < len(power_list):
-            sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i]);
+            sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i].lower());
             logging.debug('SQL: ' + sql)
             cur.execute(sql)
             value_list = cur.fetchone()
@@ -287,9 +287,8 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 async def func_alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
     #args = ctx.message.content[7:].split(' ')
-    await add_name_to_dict(ctx, new_name);
     cur = conn.cursor()
-    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name)
+    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name.lower())
     logging.debug("SQL: " + sql)
     cur.execute(sql)
     value_list = cur.fetchone()
@@ -301,12 +300,12 @@ async def func_alias(ctx, new_name, old_name):
     else:
         old_name_key = value_list[0]
         # check if the new name already exists in the database
-        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(new_name)
+        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(new_name.lower())
         logging.debug("SQL: " + sql)
         cur.execute(sql)
         value_list_2 = cur.fetchone()
         if value_list_2 is None:
-            sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(old_name_key, new_name)
+            sql = '''INSERT INTO alias (key, name) VALUES ("{}", "{}")'''.format(old_name_key, new_name.lower())
             logging.debug("SQL: " + sql)
             cur.execute(sql)
         else:
@@ -401,7 +400,7 @@ async def add(ctx):
 
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         cur = conn.cursor()
-        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(arg);
+        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(arg.lower());
         logging.debug('SQL: ' + sql)
         cur.execute(sql)
         value_list = cur.fetchone()
@@ -520,7 +519,7 @@ async def time(ctx):
 async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
-    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(correct_name_spelling);
+    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(correct_name_spelling.lower())
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
     value_list = cur.fetchone()
