@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
+#
+# FILENAME: plotty-bot.py
 # CREATED:  August 17, 2019
 # AUTHOR:   buerge3
 #
 # A discord bot for plotting player and alliance growth
-# Usage: "python3 ./sqlite_bot.py
+# Usage: "python3 ./plotty-bot.py
 import discord
 from discord.ext import commands
 from discord import Status
