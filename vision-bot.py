@@ -286,7 +286,11 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 # @param old_name, player name string
 async def func_alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
-    #args = ctx.message.content[7:].split(' ')
+
+    # add incorrect name to dictionary
+    await add_name_to_dict(ctx, incorrect_name_spelling)
+
+    # add alias
     cur = conn.cursor()
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name.lower())
     logging.debug("SQL: " + sql)
