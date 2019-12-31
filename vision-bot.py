@@ -113,13 +113,14 @@ def get_rgb_filter(im):
         apply_img_mask(im_rgb, rgb, x_percent)
         word = pytesseract.image_to_string(im_rgb)
         logging.debug("I read: " + word)
-        if (bool(re.match(r"MEM", word))):
-            logging.debug("found a working filter!")
+        if (bool(re.search(r"MEM", word))):
+            logging.debug("found a working filter! I see: " + word)
             return rgb;
         else:
             rgb[0] -= 20
             rgb[1] -= 20
             rgb[2] -= 20
+    print("Unable to process screenshot. I only see: " + word)
     return None
 
 # apply_img_mask
