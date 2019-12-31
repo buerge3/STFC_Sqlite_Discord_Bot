@@ -162,8 +162,9 @@ async def process_image(ctx, im, names_list, level_list):
             level_list.append(tmp)
             __flag = True
         elif (__flag):
-            names_list.append(tmp)
-            success = True
+            if (tmp.strip()):
+                names_list.append(tmp)
+                success = True
         else:
             names_list.append("DELETE_ME")
             level_list.append(0)
