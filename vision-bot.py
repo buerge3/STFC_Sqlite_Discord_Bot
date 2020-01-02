@@ -290,7 +290,7 @@ async def func_alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
 
     # add incorrect name to dictionary
-    await add_name_to_dict(ctx, incorrect_name_spelling)
+    await add_name_to_dict(ctx, new_name)
 
     # add alias
     cur = conn.cursor()
