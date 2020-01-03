@@ -213,6 +213,18 @@ async def check_spelling(ctx, names_list):
                 names_list[i] = "DELETE_ME" + names_list[i]
                 continue
 
+def get_key (name):
+    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(name)
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    value_list = cur.fetchone()
+    key = -1
+    if value_list is None:
+        key = add_name_to_alias(name)
+    else:
+        key = value_list[0]
+    return key
+
 # store_in_db
 # @param names_list, a list of player names
 # @param lv_list, a list of player levels
@@ -234,15 +246,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
         if (names_list[i] == ""):
             continue
         if i < len(lv_list) and i < len(power_list):
-            sql = '''SELECT key FROM alias WHERE name="{}"'''.format(names_list[i].lower());
-            logging.debug('SQL: ' + sql)
-            cur.execute(sql)
-            value_list = cur.fetchone()
-            key = -1
-            if value_list is None:
-                key = add_name_to_alias(names_list[i])
-            else:
-                key = value_list[0]
+            key = get_key(names_list[i].lower())
 
             sql = '''SELECT * FROM LVE WHERE PlayerKey={} AND Date="{}"'''.format(key, datetime.datetime.now().strftime("%Y-%m-%d"))
             logging.debug("SQL: " + sql)
@@ -289,9 +293,6 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 async def func_alias(ctx, new_name, old_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alias\'")
 
-    # add incorrect name to dictionary
-    await add_name_to_dict(ctx, new_name)
-
     # add alias
     cur = conn.cursor()
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(old_name.lower())
@@ -336,7 +337,8 @@ async def store_in_backlog(player_data):
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
 
-
+# store_in_db_from_backlog
+# @param names, a list of names to restore from the backlog
 async def store_in_db_from_backlog(ctx, names):
     # Get a key for the new entry, or the key for the old name if the name is already in the database
         cur = conn.cursor()
@@ -406,42 +408,7 @@ async def add(ctx):
 
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         cur = conn.cursor()
-        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(arg.lower());
-        logging.debug('SQL: ' + sql)
-        cur.execute(sql)
-        value_list = cur.fetchone()
-        key = -1
-        if value_list is None:
-            key = add_name_to_alias(arg)
-        else:
-            key = value_list[0]
-
-        # store the data in the backlog into the LVE db
-        #sql = '''SELECT (Name, Date, Alliance, Lv, Power) FROM backlog WHERE Name="{}"'''.format(arg)
-        #logging.debug("SQL: " + sql)
-        #cur.execute(sql)
-        #value_list = cur.fetchone()
-        #if value_list is not None:
-        #    try:
-        #        sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(key,
-        #            value_list[1],
-        #            value_list[2],
-        #            int(value_list[3]),
-        #            int(value_list[4]))
-        #        cur.execute(sql)
-        #        logging.debug("SQL: " + sql)
-        #        #sql = '''DELETE FROM backlog WHERE PlayerKey={}'''.format(value_list[0])
-        #        #cur.execute(sql)
-        #        #logging.debug("SQL: " + sql)
-        #        conn.commit()
-        #
-        #        msg = "Name: " + value_list[0] + ",\tLv: " + str(value_list[3]) + ",\tPower: " + str(value_list[4])
-        #        logging.info(msg)
-        #        await ctx.send(msg)
-        #    except ValueError:
-        #        err_msg = "[ERROR] Cannot interpret the power of player " + arg + " as an integer."
-        #        logging.warning(err_msg, exc_info=True)
-        #        await ctx.send(err_msg)
+        key = get_key(arg.lower())
 
     await store_in_db_from_backlog(ctx, args);
 
@@ -498,11 +465,6 @@ async def alliance(ctx, alliance_name):
                 await bot.change_presence(status=Status.online)
 
 
-# Add a new alias. !alias <new_name> <old_name>
-@bot.command(description="Add a new alias")
-async def alias(ctx, new_name, old_name):
-    await func_alias(ctx, new_name, old_name)
-
 @bot.command(description="Get the time until the next reset for entering data")
 async def time(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'time\'")
@@ -521,26 +483,18 @@ async def time(ctx):
     logging.info(msg)
     await ctx.send(msg)
 
-@bot.command(description="Correct a name in the backlog and submit the data for that player")
+@bot.command(description="Create a new alias for a player", aliases=[alias, correct, link])
 async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
-    cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
-    sql = '''SELECT key FROM alias WHERE name="{}"'''.format(correct_name_spelling.lower())
-    logging.debug('SQL: ' + sql)
-    cur.execute(sql)
-    value_list = cur.fetchone()
-    key = -1
-    if value_list is None:
-        key = add_name_to_alias(correct_name_spelling)
-    else:
-        key = value_list[0]
-
-    # add incorrect name to dictionary
-    #await add_name_to_dict(ctx, incorrect_name_spelling)
 
     # make the correct name an alias of the incorrect name
     if (incorrect_name_spelling != correct_name_spelling):
-        await func_alias(ctx, incorrect_name_spelling, correct_name_spelling)
+        await add_name_to_dict(ctx, new_name) # add incorrect name to dictionary
+        await func_alias(ctx, incorrect_name_spelling, correct_name_spelling) # create the alias
+    else:
+        msg = "The old name and new names are the same, so the command was not run. Try using 'add' instead!"
+        logging.warning(msg)
+        await ctx.send(msg)
 
     # store the data in the backlog into the LVE db
     await store_in_db_from_backlog(ctx, [incorrect_name_spelling]);
