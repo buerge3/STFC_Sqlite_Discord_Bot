@@ -33,3 +33,20 @@ def create_connection(db_file):
 
 
 conn = create_connection(db_name)
+
+def rm_duplicates():
+	sql = '''SELECT (name, key) FROM alias WHERE name REGEXP "[A-Z]"'''
+    logging.debug("SQL: " + sql)
+    cur.execute(sql)
+    name_list = cur.fetchall()
+    for i in range(len(name_list)):
+    	sql = '''SELECT key FROM alias WHERE name="{}"'''.format(name_list[i][0])
+    	logging.debug("SQL: " + sql)
+    	cur.execute(sql)
+    	val_list = cur.fetchall()
+    	if val is not None:
+    		for k in range(len(val_list)):
+    			sql = '''UPDATE LVE SET PlayerKey="{}" WHERE name="{}" AND PlayerKey="{}"'''.format(val_list[k], name_list[i][0], name_list[i][1])
+    			logging.debug("SQL: " + sql)
+    			cur.execute(sql)
+
