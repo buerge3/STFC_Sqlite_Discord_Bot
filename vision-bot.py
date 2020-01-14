@@ -214,6 +214,7 @@ async def check_spelling(ctx, names_list):
                 continue
 
 def get_key (name):
+    cur = conn.cursor()
     sql = '''SELECT key FROM alias WHERE name="{}"'''.format(name)
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
@@ -407,7 +408,6 @@ async def add(ctx):
         await add_name_to_dict(ctx, arg)
 
         # Get a key for the new entry, or the key for the old name if the name is already in the database
-        cur = conn.cursor()
         key = get_key(arg.lower())
 
     await store_in_db_from_backlog(ctx, args);
@@ -483,7 +483,7 @@ async def time(ctx):
     logging.info(msg)
     await ctx.send(msg)
 
-@bot.command(description="Create a new alias for a player", aliases=[alias, correct, link])
+@bot.command(description="Create a new alias for a player", aliases=["alias", "link"])
 async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
 
@@ -498,6 +498,12 @@ async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
 
     # store the data in the backlog into the LVE db
     await store_in_db_from_backlog(ctx, [incorrect_name_spelling]);
+
+'''@bot.command(description="List the inactive players in the given alliance", aliases=["cull", "cull-list"])
+async def inactives(ctx, alliance):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'inactives\'")
+'''
+
 
 @bot.event
 async def on_ready():
