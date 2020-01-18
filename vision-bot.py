@@ -30,7 +30,7 @@ import logging
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
 token_file = "secret_vision.txt"
-x_percent = 14
+x_percent = 0.12
 bot = commands.Bot(command_prefix='!')
 
 # -----------------------------------------------------------------------------
@@ -141,7 +141,7 @@ async def get_rgb_filter(ctx, im):
 def apply_img_mask(im, rgb, x_percent):
     pixdata = im.load()
     width, height = im.size
-    x_cutoff = math.floor(width / x_percent)
+    x_cutoff = math.floor(width * x_percent)
     for x in range(width):
         for y in range(height):
             r,g,b = im.getpixel((x,y))
@@ -157,40 +157,29 @@ def apply_img_mask(im, rgb, x_percent):
 # @param level_list, an empty list to populate with player levels
 # @return True if success, False if an error occurred
 async def process_image(ctx, im, names_list, level_list):
-    width, height = im.size
-    im_names = im.crop((0, math.floor(height/10), math.floor(width/2), height))
+    #width, height = im.size
+    #im_names = im.crop((0, math.floor(height/10), math.floor(width/2), height))
     try:
-        names = pytesseract.image_to_string(im_names)
-    except TesseractError as err:
+        text = pytesseract.image_to_string(im, config='--psm 7')
+    except Error as err:
         msg = "**[ERROR]** {0}".format(err)
         logging.error(msg)
         await ctx.send(msg)
         return
-    tmp_list = names.replace("|", "").split('\n\n')
-    success = False
-    __flag = False
-    for tmp in tmp_list:
-        if (bool(re.match(r"^[0-9]+ \S", tmp))):
-            lv, name = tmp.split(' ', 1)
-            level_list.append(lv)
-            names_list.append(name)
-            success = True
-        elif (bool(re.match(r"^[0-9]+$", tmp))):
-            level_list.append(tmp)
-            __flag = True
-        elif (__flag):
-            if (tmp.strip()):
-                names_list.append(tmp)
-                success = True
-        else:
-            names_list.append("DELETE_ME")
-            level_list.append(0)
-    if not success:
-        msg = "**[ERROR]** Unable to process image; cause: did not discover any data in the expected format"
+    if (bool(re.search(r"[0-9]+ \S", text))):
+        text = re.sub(r'^\W+', '', text)
+        lv, name = text.split(' ', 1)
+        name = name.replace(" ", "_")
+        level_list.append(lv)
+        names_list.append(name)
+        success = True
+    else:
+        #msg = "**[ERROR]** Unable to process image; cause: did not discover any data in the expected format"
+        msg = "**[ERROR]** Unable to process line {}; cause: did not discover data in the expected format".format(text)
         logging.error(msg)
         await ctx.send(msg)
         return False;
-    if len(names_list) != len(level_list):
+    '''if len(names_list) != len(level_list):
         msg = "**[ERROR]** Unable to process image; cause: did not identify exactly one level for each name"
         logging.error(msg)
         logging.debug("NAMES:")
@@ -200,7 +189,7 @@ async def process_image(ctx, im, names_list, level_list):
         for lv in level_list:
             print(lv)
         await ctx.send(msg)
-        return False;
+        return False;'''
     return True;
 
 # check_spelling
@@ -402,31 +391,41 @@ async def process_screenshot(ctx, i, alliance_name):
         logging.error(msg)
         await ctx.send(msg)
         return False
+    width, height = im.size
+    tasks = []
     apply_img_mask(im, rgb, x_percent)
-    if (await process_image(ctx, im, names_list, level_list)):
-        await check_spelling(ctx, names_list, i)
-        width, height = im.size
-        power_list = []
-        im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
+    for k in range(7):
+        a = 2 * height / 10
+        b = (( height - a) / 7 ) * k
+        c = (( height - a) / 7 ) * (k + 1)
+        im_names = im.crop((  0, math.floor( a + b ) , math.floor(width/2), math.floor( a + c ) ))
+        #tasks.append(process_image(ctx, im_names, names_list, level_list))
+        await process_image(ctx, im_names, names_list, level_list)
+    #await asyncio.gather(*tasks)
+    #if (await process_image(ctx, im, names_list, level_list)):
+    #await asyncio.gather(*tasks)
+    await check_spelling(ctx, names_list, i)
+    power_list = []
+    im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
 
-        try:
-            power = pytesseract.image_to_string(im_power)
-        except TesseractError as err:
-            msg = "**[ERROR]** {0}".format(err)
-            logging.error(msg)
-            await ctx.send(msg)
-            return;
+    try:
+        power = pytesseract.image_to_string(im_power)
+    except TesseractError as err:
+        msg = "**[ERROR]** {0}".format(err)
+        logging.error(msg)
+        await ctx.send(msg)
+        return;
 
-        power_list = power.split('\n')
-        for i in range(len(power_list)):
-            power_list[i] = re.sub("[^0-9,]", "", power_list[i])
-        power_list = list(filter(None, power_list))
-        await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
-    else:
+    power_list = power.split('\n')
+    for i in range(len(power_list)):
+        power_list[i] = re.sub("[^0-9,]", "", power_list[i])
+    power_list = list(filter(None, power_list))
+    await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
+    '''else:
         msg = "**[ERROR]** Unable to process screenshot {}".format(i)
         logging.error(msg)
         await ctx.send(msg)
-        return False
+        return False'''
 
 
 # init_logger
