@@ -18,6 +18,7 @@ import pytesseract
 import math
 from spellchecker import SpellChecker
 
+import asyncio
 import aiohttp
 import aiofiles
 
@@ -104,14 +105,21 @@ async def getImage(url):
 # get_rgb_filter
 # @param im, the STFC roster screenshot to find appropriate filter values for
 # @returns rgb, a three-element list consisting of the rgb values for the filter
-def get_rgb_filter(im):
+async def get_rgb_filter(ctx, im):
     width, height = im.size
     rgb = [220, 220, 220]
     for i in range(3):
         im_rgb = im.crop((0, 0, width, math.floor(height/10)))
         #logging.debug("trying r=" + str(rgb[0]), ", g=" + str(rgb[1]) + ", b=" + str(rgb[2]))
         apply_img_mask(im_rgb, rgb, x_percent)
-        word = pytesseract.image_to_string(im_rgb)
+        try:
+            word = pytesseract.image_to_string(im_rgb)
+        except TesseractError as err:
+            msg = "**[ERROR]** {0}".format(err)
+            logging.error(msg)
+            await ctx.send(msg)
+            return None
+
         logging.debug("I read: " + word)
         if (bool(re.search(r"MEM", word))):
             logging.debug("found a working filter! I see: " + word)
@@ -120,7 +128,9 @@ def get_rgb_filter(im):
             rgb[0] -= 20
             rgb[1] -= 20
             rgb[2] -= 20
-    print("Unable to process screenshot. I only see: " + word)
+    msg = "**[ERROR]** Unable to find a suitable rgb filter";
+    logging.error(msg)
+    await ctx.send(msg)
     return None
 
 # apply_img_mask
@@ -149,7 +159,13 @@ def apply_img_mask(im, rgb, x_percent):
 async def process_image(ctx, im, names_list, level_list):
     width, height = im.size
     im_names = im.crop((0, math.floor(height/10), math.floor(width/2), height))
-    names = pytesseract.image_to_string(im_names)
+    try:
+        names = pytesseract.image_to_string(im_names)
+    except TesseractError as err:
+        msg = "**[ERROR]** {0}".format(err)
+        logging.error(msg)
+        await ctx.send(msg)
+        return
     tmp_list = names.replace("|", "").split('\n\n')
     success = False
     __flag = False
@@ -170,12 +186,12 @@ async def process_image(ctx, im, names_list, level_list):
             names_list.append("DELETE_ME")
             level_list.append(0)
     if not success:
-        msg = "Unable to process image, please try again."
+        msg = "**[ERROR]** Unable to process image; cause: did not discover any data in the expected format"
         logging.error(msg)
         await ctx.send(msg)
         return False;
     if len(names_list) != len(level_list):
-        msg = "Unable to process image; cause: did not identify exactly one level for each name"
+        msg = "**[ERROR]** Unable to process image; cause: did not identify exactly one level for each name"
         logging.error(msg)
         logging.debug("NAMES:")
         for name in names_list:
@@ -183,13 +199,14 @@ async def process_image(ctx, im, names_list, level_list):
         logging.debug("LEVELS:")
         for lv in level_list:
             print(lv)
+        await ctx.send(msg)
         return False;
     return True;
 
 # check_spelling
 # @param names_list, a list of player names to check the spelling of
 #         using the dictionary file 'STFC_dict.txt'
-async def check_spelling(ctx, names_list):
+async def check_spelling(ctx, names_list, screenshot_num):
     spell = SpellChecker(language=None, case_sensitive=False)
     spell.word_frequency.load_text_file("STFC_dict.txt")
     
@@ -207,7 +224,7 @@ async def check_spelling(ctx, names_list):
                 logging.debug("Corrected '{}' to '{}'".format(word, cor))
                 names_list[i] = cor;
             else:
-                msg = "Unrecognized player name {} in row {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, i)
+                msg = "**[WARNING]** Unrecognized player name {} in screenshot {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, screenshot_num)
                 logging.warning(msg)
                 await ctx.send(msg)
                 names_list[i] = "DELETE_ME" + names_list[i]
@@ -254,7 +271,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
             cur.execute(sql)
             value_list = cur.fetchone()
             if value_list is not None:
-                err_msg = "Data for player {} has already been entered today. Skipping this player...".format(names_list[i])
+                err_msg = "**[WARNING]** Data for player {} has already been entered today. Skipping this player...".format(names_list[i])
                 logging.warning(err_msg)
                 await ctx.send(err_msg)
                 continue
@@ -276,7 +293,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                     await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, int(lv_list[i]), int(power_list[i].replace(',', ''))))
                 
             except ValueError:
-                err_msg = "Cannot interpret the power of player " + names_list[i] + " as an integer."
+                err_msg = "**[ERROR]** Cannot interpret the power of player " + names_list[i] + " as an integer."
                 logging.warning(err_msg, exc_info=True)
                 await ctx.send(err_msg)
                 continue
@@ -302,7 +319,7 @@ async def func_alias(ctx, new_name, old_name):
     value_list = cur.fetchone()
     if value_list is None:
         #add_name_to_alias(args[0])
-        msg = "[ERROR] The player \"" + old_name + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
+        msg = "**[ERROR]** The player \"" + old_name + "\" does not exist. Please add an alias using the format !alias <new_name> <old_name>"
         logging.error(msg)
         await ctx.send(msg)
     else:
@@ -365,6 +382,52 @@ async def store_in_db_from_backlog(ctx, names):
 
         await store_in_db(ctx, names_list, lv_list, power_list, alliance);
 
+# process_screenshot
+# @param i, index of the screenshot to process
+async def process_screenshot(ctx, i, alliance_name):
+    logging.debug("Looking at attachment #" + str(i))
+    if not isImage(ctx, i):
+        msg = '**[ERROR]** Please only submit images. Stopping...'
+        logging.error(msg)
+        await ctx.send(msg)
+        return False
+    im_url = ctx.message.attachments[i].url
+    await getImage(im_url)
+    im = Image.open('latest.jpg')
+    names_list = []
+    level_list = []
+    rgb = await get_rgb_filter(ctx, im)
+    if rgb is None:
+        msg = "**[ERROR]** Unable to process screenshot {}".format(i)
+        logging.error(msg)
+        await ctx.send(msg)
+        return False
+    apply_img_mask(im, rgb, x_percent)
+    if (await process_image(ctx, im, names_list, level_list)):
+        await check_spelling(ctx, names_list, i)
+        width, height = im.size
+        power_list = []
+        im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
+
+        try:
+            power = pytesseract.image_to_string(im_power)
+        except TesseractError as err:
+            msg = "**[ERROR]** {0}".format(err)
+            logging.error(msg)
+            await ctx.send(msg)
+            return;
+
+        power_list = power.split('\n')
+        for i in range(len(power_list)):
+            power_list[i] = re.sub("[^0-9,]", "", power_list[i])
+        power_list = list(filter(None, power_list))
+        await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
+    else:
+        msg = "**[ERROR]** Unable to process screenshot {}".format(i)
+        logging.error(msg)
+        await ctx.send(msg)
+        return False
+
 
 # init_logger
 # initialize the logger to output msgs of lv INFO or higher to the console,
@@ -421,7 +484,7 @@ async def alliance(ctx, alliance_name):
     await bot.change_presence(status=Status.dnd)
     num_attachments = len(ctx.message.attachments)
     if num_attachments < 1:
-        msg = 'Please include a roster screenshot'
+        msg = '**[ERROR]** Please include a roster screenshot'
         logging.error(msg)
         await ctx.send(msg)
     else:
@@ -432,37 +495,15 @@ async def alliance(ctx, alliance_name):
         conn.cursor().execute(del_backlog)
 
         # Process each attachment
+        #tasks = []
+        #for i in range(num_attachments):
+            #tasks.append(process_screenshot(ctx, i, alliance_name))
+            #task = asyncio.create_task(process_screenshot(ctx, i, alliance_name))
+            #tasks.append(task)
+        #await asyncio.gather(*tasks)
         for i in range(num_attachments):
-            logging.debug("Looking at image " + str(i) + " of " + str(num_attachments))
-            if not isImage(ctx, i):
-                msg = 'Please only submit images. Stopping...'
-                logging.error(msg)
-                await ctx.send(msg)
-                return False
-            im_url = ctx.message.attachments[i].url
-            await getImage(im_url)
-            im = Image.open('latest.jpg')
-            names_list = []
-            level_list = []
-            rgb = get_rgb_filter(im)
-            if rgb is None:
-                msg = "Unable to process screenshot"
-                logging.error(msg)
-                await ctx.send(msg)
-                return False
-            apply_img_mask(im, rgb, x_percent)
-            if (await process_image(ctx, im, names_list, level_list)):
-                await check_spelling(ctx, names_list)
-                width, height = im.size
-                power_list = []
-                im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
-                power = pytesseract.image_to_string(im_power)
-                power_list = power.split('\n')
-                for i in range(len(power_list)):
-                    power_list[i] = re.sub("[^0-9,]", "", power_list[i])
-                power_list = list(filter(None, power_list))
-                await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
-                await bot.change_presence(status=Status.online)
+            await process_screenshot(ctx, i, alliance_name)
+        await bot.change_presence(status=Status.online)
 
 
 @bot.command(description="Get the time until the next reset for entering data")
@@ -489,10 +530,10 @@ async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
 
     # make the correct name an alias of the incorrect name
     if (incorrect_name_spelling != correct_name_spelling):
-        await add_name_to_dict(ctx, new_name) # add incorrect name to dictionary
+        await add_name_to_dict(ctx, incorrect_name_spelling) # add incorrect name to dictionary
         await func_alias(ctx, incorrect_name_spelling, correct_name_spelling) # create the alias
     else:
-        msg = "The old name and new names are the same, so the command was not run. Try using 'add' instead!"
+        msg = "**[WARNING]** The old name and new names are the same, so the command was not run. Try using 'add' instead!"
         logging.warning(msg)
         await ctx.send(msg)
 
