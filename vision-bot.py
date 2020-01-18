@@ -165,37 +165,26 @@ async def process_image(ctx, im, names_list, level_list):
         msg = "**[ERROR]** {0}".format(err)
         logging.error(msg)
         await ctx.send(msg)
-        return
+        return False
     if (bool(re.search(r"[0-9]+ \S", text))):
         text = re.sub(r'^\W+', '', text)
         lv, name = text.split(' ', 1)
         name = name.replace(" ", "_")
+        name = re.sub(r'^[0-9]+_', '', name)
         level_list.append(lv)
         names_list.append(name)
-        success = True
+        return True
     else:
         #msg = "**[ERROR]** Unable to process image; cause: did not discover any data in the expected format"
         msg = "**[ERROR]** Unable to process line {}; cause: did not discover data in the expected format".format(text)
         logging.error(msg)
         await ctx.send(msg)
-        return False;
-    '''if len(names_list) != len(level_list):
-        msg = "**[ERROR]** Unable to process image; cause: did not identify exactly one level for each name"
-        logging.error(msg)
-        logging.debug("NAMES:")
-        for name in names_list:
-            logging.debug(name)
-        logging.debug("LEVELS:")
-        for lv in level_list:
-            print(lv)
-        await ctx.send(msg)
-        return False;'''
-    return True;
+        return False
 
 # check_spelling
 # @param names_list, a list of player names to check the spelling of
 #         using the dictionary file 'STFC_dict.txt'
-async def check_spelling(ctx, names_list, screenshot_num):
+async def check_spelling(ctx, names_list, mispelled):
     spell = SpellChecker(language=None, case_sensitive=False)
     spell.word_frequency.load_text_file("STFC_dict.txt")
     
@@ -213,7 +202,8 @@ async def check_spelling(ctx, names_list, screenshot_num):
                 logging.debug("Corrected '{}' to '{}'".format(word, cor))
                 names_list[i] = cor;
             else:
-                msg = "**[WARNING]** Unrecognized player name {} in screenshot {}. If this is a new player, please add them to the dictionary by doing '!add <player name>'".format(word, screenshot_num)
+                mispelled.append(word)
+                msg = "**[WARNING]** Unrecognized player name {}".format(word)
                 logging.warning(msg)
                 await ctx.send(msg)
                 names_list[i] = "DELETE_ME" + names_list[i]
@@ -241,6 +231,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 
     cur = conn.cursor()
 
+    success_count = 0;
     # Store the data for each name in the database
     for i in range(0, len(names_list)):
         target = ""
@@ -288,10 +279,12 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                 continue
 
             if target == "LVE":
+                success_count += 1
                 msg = "Name: " + names_list[i] + ",\tLv: " + str(lv_list[i]) + ",\tPower: " + str(power_list[i])
                 logging.info(msg)
                 await ctx.send(msg)
     conn.commit()
+    return success_count
 
 # func_alias
 # @param ctx, Discord msg context
@@ -373,13 +366,14 @@ async def store_in_db_from_backlog(ctx, names):
 
 # process_screenshot
 # @param i, index of the screenshot to process
-async def process_screenshot(ctx, i, alliance_name):
-    logging.debug("Looking at attachment #" + str(i))
+# @return success_count, # of names successfully uploded to the LVE database
+async def process_screenshot(ctx, i, alliance_name, mispelled_list):
+
     if not isImage(ctx, i):
-        msg = '**[ERROR]** Please only submit images. Stopping...'
+        msg = '**[ERROR]** Attachment #{} is not an image. Please only submit images.'.format(i + 1)
         logging.error(msg)
         await ctx.send(msg)
-        return False
+        return 0
     im_url = ctx.message.attachments[i].url
     await getImage(im_url)
     im = Image.open('latest.jpg')
@@ -387,12 +381,17 @@ async def process_screenshot(ctx, i, alliance_name):
     level_list = []
     rgb = await get_rgb_filter(ctx, im)
     if rgb is None:
-        msg = "**[ERROR]** Unable to process screenshot {}".format(i)
+        fail_count += 7
+        msg = "**[ERROR]** Unable to process screenshot #{}; cause: failed to determine a suitable rgb filter".format(i + 1)
         logging.error(msg)
         await ctx.send(msg)
-        return False
+        return 0
+    else:
+        msg = "Processing screenshot #{}:".format(i + 1)
+        logging.info(msg)
+        await ctx.send(msg)
+
     width, height = im.size
-    tasks = []
     apply_img_mask(im, rgb, x_percent)
     for k in range(7):
         a = 2 * height / 10
@@ -401,32 +400,26 @@ async def process_screenshot(ctx, i, alliance_name):
         im_names = im.crop((  0, math.floor( a + b ) , math.floor(width/2), math.floor( a + c ) ))
         #tasks.append(process_image(ctx, im_names, names_list, level_list))
         await process_image(ctx, im_names, names_list, level_list)
-    #await asyncio.gather(*tasks)
-    #if (await process_image(ctx, im, names_list, level_list)):
-    #await asyncio.gather(*tasks)
-    await check_spelling(ctx, names_list, i)
+
+    await check_spelling(ctx, names_list, mispelled_list)
     power_list = []
     im_power = im.crop((math.floor(width/2), math.floor(height/10), width, height))
 
     try:
         power = pytesseract.image_to_string(im_power)
     except TesseractError as err:
+        fail_count += 7;
         msg = "**[ERROR]** {0}".format(err)
         logging.error(msg)
         await ctx.send(msg)
-        return;
+        return 0
 
     power_list = power.split('\n')
     for i in range(len(power_list)):
         power_list[i] = re.sub("[^0-9,]", "", power_list[i])
     power_list = list(filter(None, power_list))
-    await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
-    '''else:
-        msg = "**[ERROR]** Unable to process screenshot {}".format(i)
-        logging.error(msg)
-        await ctx.send(msg)
-        return False'''
-
+    success_count = await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
+    return success_count
 
 # init_logger
 # initialize the logger to output msgs of lv INFO or higher to the console,
@@ -477,7 +470,7 @@ async def add(ctx):
     file.close()
 
 # Add new roster screenshot data. !alliance <alliance_name> [attachment=image]
-@bot.command(description="Add new roster screenshot data.")
+@bot.command(description="Add new roster screenshot data.", aliases=["upload", "upload-alliance"])
 async def alliance(ctx, alliance_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alliance\'")
     await bot.change_presence(status=Status.dnd)
@@ -493,15 +486,18 @@ async def alliance(ctx, alliance_name):
         logging.debug("SQL: " + del_backlog)
         conn.cursor().execute(del_backlog)
 
-        # Process each attachment
-        #tasks = []
-        #for i in range(num_attachments):
-            #tasks.append(process_screenshot(ctx, i, alliance_name))
-            #task = asyncio.create_task(process_screenshot(ctx, i, alliance_name))
-            #tasks.append(task)
-        #await asyncio.gather(*tasks)
+        mispelled_list = []
+        success_count = 0
+        failed_count = 0
         for i in range(num_attachments):
-            await process_screenshot(ctx, i, alliance_name)
+            num_success = await process_screenshot(ctx, i, alliance_name, mispelled_list)
+            success_count += num_success
+            failed_count += 7 - num_success
+        embed=discord.Embed(title="Upload Report for {}".format(ctx.message.author), color=0xff0000)
+        embed.add_field(name="SUCCESS:", value="Uploaded data for {} unique players".format(success_count), inline=False)
+        embed.add_field(name="FAILED:", value="Unable to process {} names".format(failed_count), inline=False)
+        embed.add_field(name="UNRECOGNIZED NAMES:", value=", ".join(mispelled_list), inline=False)
+        await ctx.send("Done.", embed=embed)
         await bot.change_presence(status=Status.online)
 
 
