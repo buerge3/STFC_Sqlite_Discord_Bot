@@ -151,12 +151,12 @@ def apply_img_mask(im, rgb, x_percent):
             else:
                 pixdata[x,y] = (0,0,0,0)
 
-# process_image
+# process_name
 # @param im, an STFC roster screenshot
 # @param names_list, an empty list to populate with player names
 # @param level_list, an empty list to populate with player levels
 # @return True if success, False if an error occurred
-async def process_image(ctx, im, names_list, level_list):
+async def process_name(ctx, im, names_list, level_list):
     #width, height = im.size
     #im_names = im.crop((0, math.floor(height/10), math.floor(width/2), height))
     try:
@@ -191,7 +191,7 @@ async def check_spelling(ctx, names_list, mispelled):
     for i in range(len(names_list)):
         if (names_list[i] == "DELETE_ME"):
             continue
-        word = names_list[i].lower()
+        word = names_list[i]
 
         if word in spell:
             names_list[i] = word
@@ -272,8 +272,9 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                     #    int(power_list[i].replace(',', '')))
                     await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, int(lv_list[i]), int(power_list[i].replace(',', ''))))
                 
-            except ValueError:
-                err_msg = "**[ERROR]** Cannot interpret the power of player " + names_list[i] + " as an integer."
+            except ValueError as err:
+                #err_msg = "**[ERROR]** Cannot interpret the power of player {} as an integer; Power: {}".format(names_list[i], str(power_list[i]).replace(',', ''))
+                err_msg = "**[ERROR]** {}".format(err)
                 logging.warning(err_msg, exc_info=True)
                 await ctx.send(err_msg)
                 continue
@@ -399,7 +400,7 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
         c = (( height - a) / 7 ) * (k + 1)
         im_names = im.crop((  0, math.floor( a + b ) , math.floor(width/2), math.floor( a + c ) ))
         #tasks.append(process_image(ctx, im_names, names_list, level_list))
-        await process_image(ctx, im_names, names_list, level_list)
+        await process_name(ctx, im_names, names_list, level_list)
 
     await check_spelling(ctx, names_list, mispelled_list)
     power_list = []
@@ -494,9 +495,9 @@ async def alliance(ctx, alliance_name):
             success_count += num_success
             failed_count += 7 - num_success
         embed=discord.Embed(title="Upload Report for {}".format(ctx.message.author), color=0xff0000)
-        embed.add_field(name="SUCCESS:", value="Uploaded data for {} unique players".format(success_count), inline=False)
-        embed.add_field(name="FAILED:", value="Unable to process {} names".format(failed_count), inline=False)
-        embed.add_field(name="UNRECOGNIZED NAMES:", value=", ".join(mispelled_list), inline=False)
+        embed.add_field(name="SUCCESS ({}):".format(success_count), value="Uploaded data for {} unique players".format(success_count), inline=False)
+        embed.add_field(name="FAILED ({}):".format(failed_count), value="Unable to process {} names".format(failed_count), inline=False)
+        embed.add_field(name="UNRECOGNIZED NAMES ({}):". format(len(mispelled_list)), value=", ".join(mispelled_list), inline=False)
         await ctx.send("Done.", embed=embed)
         await bot.change_presence(status=Status.online)
 
