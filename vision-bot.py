@@ -108,10 +108,10 @@ async def getImage(url):
 async def get_rgb_filter(ctx, im):
     width, height = im.size
     rgb = [220, 220, 220]
-    for i in range(3):
+    for i in range(4):
         im_rgb = im.crop((0, 0, width, math.floor(height/10)))
         #logging.debug("trying r=" + str(rgb[0]), ", g=" + str(rgb[1]) + ", b=" + str(rgb[2]))
-        apply_img_mask(im_rgb, rgb, x_percent)
+        apply_img_mask(im_rgb, rgb, 0)
         try:
             word = pytesseract.image_to_string(im_rgb)
         except TesseractError as err:
@@ -121,7 +121,7 @@ async def get_rgb_filter(ctx, im):
             return None
 
         logging.debug("I read: " + word)
-        if (bool(re.search(r"MEM", word))):
+        if (bool(re.search(r"MEMBERS", word))):
             logging.debug("found a working filter! I see: " + word)
             return rgb;
         else:
@@ -166,8 +166,10 @@ async def process_name(ctx, im, names_list, level_list):
         logging.error(msg)
         await ctx.send(msg)
         return False
-    if (bool(re.search(r"[0-9]+ \S", text))):
-        text = re.sub(r'^\W+', '', text)
+    match = re.search(r"[0-9]+ \S", text)
+    if (bool(match)):
+        #text = re.sub(r'^\W+', '', text)
+        text = text[match.start():]
         lv, name = text.split(' ', 1)
         name = name.replace(" ", "_")
         name = re.sub(r'^[0-9]+_', '', name)
@@ -232,6 +234,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
     cur = conn.cursor()
 
     success_count = 0;
+    warn_count = 0;
     # Store the data for each name in the database
     for i in range(0, len(names_list)):
         target = ""
@@ -251,6 +254,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
             cur.execute(sql)
             value_list = cur.fetchone()
             if value_list is not None:
+                warn_count += 1
                 err_msg = "**[WARNING]** Data for player {} has already been entered today. Skipping this player...".format(names_list[i])
                 logging.warning(err_msg)
                 await ctx.send(err_msg)
@@ -281,11 +285,11 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 
             if target == "LVE":
                 success_count += 1
-                msg = "Name: " + names_list[i] + ",\tLv: " + str(lv_list[i]) + ",\tPower: " + str(power_list[i])
+                msg = "Name: " + names_list[i] + ", Lv: " + str(lv_list[i]) + ", Power: " + str(power_list[i])
                 logging.info(msg)
                 await ctx.send(msg)
     conn.commit()
-    return success_count
+    return success_count, warn_count
 
 # func_alias
 # @param ctx, Discord msg context
@@ -382,7 +386,6 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     level_list = []
     rgb = await get_rgb_filter(ctx, im)
     if rgb is None:
-        fail_count += 7
         msg = "**[ERROR]** Unable to process screenshot #{}; cause: failed to determine a suitable rgb filter".format(i + 1)
         logging.error(msg)
         await ctx.send(msg)
@@ -419,8 +422,8 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     for i in range(len(power_list)):
         power_list[i] = re.sub("[^0-9,]", "", power_list[i])
     power_list = list(filter(None, power_list))
-    success_count = await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
-    return success_count
+    success_count, warn_count = await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
+    return success_count, warn_count
 
 # init_logger
 # initialize the logger to output msgs of lv INFO or higher to the console,
@@ -474,12 +477,12 @@ async def add(ctx):
 @bot.command(description="Add new roster screenshot data.", aliases=["upload", "upload-alliance"])
 async def alliance(ctx, alliance_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alliance\'")
-    await bot.change_presence(status=Status.dnd)
     num_attachments = len(ctx.message.attachments)
     if num_attachments < 1:
         msg = '**[ERROR]** Please include a roster screenshot'
         logging.error(msg)
         await ctx.send(msg)
+        return
     else:
 
         # Delete any data currently stored in the backlog
@@ -489,17 +492,35 @@ async def alliance(ctx, alliance_name):
 
         mispelled_list = []
         success_count = 0
+        already_uploaded_count = 0;
         failed_count = 0
         for i in range(num_attachments):
-            num_success = await process_screenshot(ctx, i, alliance_name, mispelled_list)
+            try:
+                async with ctx.message.channel.typing():
+                    num_success, num_warn = await process_screenshot(ctx, i, alliance_name, mispelled_list)
+            except UnicodeDecodeError:
+                msg = "**[ERROR]** The dictionary contains at least one non-unicode character"
+                logging.error(msg)
+                await ctx.send(msg)
+                return
             success_count += num_success
-            failed_count += 7 - num_success
+            already_uploaded_count += num_warn
+            failed_count += 7 - num_success - num_warn
+        failed_count -= len(mispelled_list)
+        if len(mispelled_list) == 0:
+            mispelled_msg = "No mispelled names"
+        else:
+            mispelled_msg = ", ".join(mispelled_list)
+        if failed_count == 0:
+            failed_msg = "No errors"
+        else:
+            failed_msg = "Unable to process {} names due to errors".format(failed_count)
         embed=discord.Embed(title="Upload Report for {}".format(ctx.message.author), color=0xff0000)
         embed.add_field(name="SUCCESS ({}):".format(success_count), value="Uploaded data for {} unique players".format(success_count), inline=False)
-        embed.add_field(name="FAILED ({}):".format(failed_count), value="Unable to process {} names".format(failed_count), inline=False)
-        embed.add_field(name="UNRECOGNIZED NAMES ({}):". format(len(mispelled_list)), value=", ".join(mispelled_list), inline=False)
+        embed.add_field(name="UNRECOGNIZED NAMES ({}):".format(len(mispelled_list)), value=mispelled_msg, inline=False)
+        embed.add_field(name="ALREADY UPLOADED ({}):".format(already_uploaded_count), value="No data was uploaded for {} names since their data for today is already stored".format(already_uploaded_count), inline=False)
+        embed.add_field(name="FAILED ({}):".format(failed_count), value=failed_msg, inline=False)
         await ctx.send("Done.", embed=embed)
-        await bot.change_presence(status=Status.online)
 
 
 @bot.command(description="Get the time until the next reset for entering data")
@@ -536,16 +557,45 @@ async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
     # store the data in the backlog into the LVE db
     await store_in_db_from_backlog(ctx, [incorrect_name_spelling]);
 
-'''@bot.command(description="List the inactive players in the given alliance", aliases=["cull", "cull-list"])
-async def inactives(ctx, alliance):
-    logging.debug("Player " + str(ctx.message.author) + " running command \'inactives\'")
-'''
 
+@bot.command(description="Display the daily upload status for a team", aliases=["upload-status"])
+async def status(ctx, team ):
+    cur = conn.cursor()
+    logging.debug("Player " + str(ctx.message.author) + " running command \'status\'")
+    sql = '''SELECT COUNT(*) FROM LVE  WHERE Alliance="{}" AND Date="{}"'''.format(team, datetime.datetime.now().strftime("%Y-%m-%d"))
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    num_data = cur.fetchone()
+    if num_data is not None and num_data[0] > 0:
+        sql = '''SELECT Name FROM backlog WHERE Alliance="{}" AND Date="{}"'''.format(team, datetime.datetime.now().strftime("%Y-%m-%d"))
+        logging.debug('SQL: ' + sql)
+        cur.execute(sql)
+        player_data_list = cur.fetchall()
+        msg = "Successfully uploaded {} names. There are {} mispelled names in the backlog.".format(num_data[0], len(player_data_list))
+        if len(player_data_list) > 0:
+            msg += "\nBACKLOG:\n"
+            for row in player_data_list:
+                msg += "\t" + row[0] + "\n"
+        logging.info(msg)
+        await ctx.send(msg)
+    else:
+        msg = "No data has been uploaded for team {} today".format(team)
+        logging.info(msg)
+        await ctx.send(msg)
 
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
 
+
+'''@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.BadArgument):
+        await ctx.send("[ERROR] Bad argument")
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("[ERROR] Missing required argument")
+    else:
+        await ctx.send("[ERROR] {}".format(error))'''
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
