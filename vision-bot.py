@@ -384,6 +384,7 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     im = Image.open('latest.jpg')
     names_list = []
     level_list = []
+    exclude = [0] * 7
     rgb = await get_rgb_filter(ctx, im)
     if rgb is None:
         msg = "**[ERROR]** Unable to process screenshot #{}; cause: failed to determine a suitable rgb filter".format(i + 1)
@@ -403,7 +404,8 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
         c = (( height - a) / 7 ) * (k + 1)
         im_names = im.crop((  0, math.floor( a + b ) , math.floor(width/2), math.floor( a + c ) ))
         #tasks.append(process_image(ctx, im_names, names_list, level_list))
-        await process_name(ctx, im_names, names_list, level_list)
+        if not await process_name(ctx, im_names, names_list, level_list):
+            exclude[k] = 1
 
     await check_spelling(ctx, names_list, mispelled_list)
     power_list = []
@@ -422,7 +424,11 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     for i in range(len(power_list)):
         power_list[i] = re.sub("[^0-9,]", "", power_list[i])
     power_list = list(filter(None, power_list))
-    success_count, warn_count = await store_in_db(ctx, names_list, level_list, power_list, alliance_name)
+    new_power_list = []
+    for i in range(7):
+        if not exclude[i]:
+            new_power_list.append(power_list[i])
+    success_count, warn_count = await store_in_db(ctx, names_list, level_list, new_power_list, alliance_name.lower())
     return success_count, warn_count
 
 # init_logger

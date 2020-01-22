@@ -108,7 +108,7 @@ async def player(ctx, ppl : str):
     dates = []
     values = []
 
-    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}"'''.format(str(key))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+14 days') > julianday('now') '''.format(str(key))
     logging.debug("SQL: " + sql)
     cur.execute(sql)
 
@@ -124,7 +124,7 @@ async def player(ctx, ppl : str):
     ax = fig.add_subplot(111)
     line, = ax.plot(dates, values, lw=2)
     fig.autofmt_xdate()
-    ax.set_title("Power of " + ppl)
+    ax.set_title("Growth of " + ppl + " for Two Weeks")
     ax.set_xlabel("Date")
     ax.set_ylabel("Power")
     ax.get_yaxis().set_major_formatter(
