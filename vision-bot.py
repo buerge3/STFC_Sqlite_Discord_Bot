@@ -568,12 +568,12 @@ async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
 async def status(ctx, team ):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'status\'")
-    sql = '''SELECT COUNT(*) FROM LVE  WHERE Alliance="{}" AND Date="{}"'''.format(team, datetime.datetime.now().strftime("%Y-%m-%d"))
+    sql = '''SELECT COUNT(*) FROM LVE  WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
     num_data = cur.fetchone()
     if num_data is not None and num_data[0] > 0:
-        sql = '''SELECT Name FROM backlog WHERE Alliance="{}" AND Date="{}"'''.format(team, datetime.datetime.now().strftime("%Y-%m-%d"))
+        sql = '''SELECT Name FROM backlog WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
         logging.debug('SQL: ' + sql)
         cur.execute(sql)
         player_data_list = cur.fetchall()
