@@ -18,6 +18,7 @@ import logging
 
 import time
 import datetime
+from datetime import timedelta
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.ticker as tkr
@@ -108,7 +109,7 @@ async def player(ctx, ppl : str):
     dates = []
     values = []
 
-    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+14 days') > julianday('now') '''.format(str(key))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now') '''.format(str(key))
     logging.debug("SQL: " + sql)
     cur.execute(sql)
 
@@ -253,11 +254,102 @@ async def alliances(*argv):
     plt.close()
 
     await ctx.send(file=discord.File(img_save_name))
+'''
+def human_format(num):
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    # add more suffixes if you need them
+    return '%.2f%s' % (num, ['', 'k', 'M', 'G', 'T', 'P'][magnitude])
+
+@bot.command(description="Display the roster with active/inactive status for the given team", aliases=["roster", "cull-list"])
+async def inactives(ctx, team, options='-g'):
+    '''
+        COMMAND OPTIONS:
+        -n or -a   = sort my name/alphabetically
+        -p         = sort by power
+        -g         = sort by growth
+    '''
+    num_insufficient = 0;
+    num_active = 0;
+    num_inactive = 0;
+    total_growth = 0;
+    total_percent_growth = 0;
+    roster_msg = "";
+    cur = conn.cursor()
+
+
+    sql = '''SELECT PlayerKey FROM LVE WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
+    '''if options == "-n" or options == "-a":
+        # DON'T KNOW HOW TO IMPLEMENT THIS YET
+    elif (options == "-p"):
+        sql += " ORDER BY Power DESC"
+    elif (options == "-g"):
+        # NOT SURE KNOW HOW TO IMPLEMENT THIS YET'''
+    sql += " ORDER BY Power DESC"
+    logging.debug('SQL: ' + sql)
+    query_res = cur.execute(sql)
+
+    async with ctx.message.channel.typing():
+
+        for key in query_res:
+            sql2 = '''SELECT Lv, Power, Date FROM LVE WHERE PlayerKey="{}" AND Power NOT IN (SELECT Power FROM LVE WHERE PlayerKey="{}" AND Date="{}") ORDER BY Date DESC LIMIT 1;'''.format(key[0], key[0], datetime.datetime.now().strftime("%Y-%m-%d"))
+            logging.debug('SQL: ' + sql2)
+            cur.executescript(sql2)
+            recent = cur.fetchone()
+
+            sql3 = '''SELECT Name FROM alias WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
+            logging.debug('SQL: ' + sql3)
+            cur.execute(sql3)
+            get_name = cur.fetchone()
+
+            sql4 = '''SELECT Power, Date FROM LVE WHERE PlayerKey="{}" AND Date>"{}" ORDER BY DATE DESC'''.format(key[0], datetime.datetime.now() - datetime.timedelta(days=8))
+            logging.debug('SQL: ' + sql4)
+            cur.execute(sql4)
+            result = cur.fetchall()
+
+            num_entries = len(result)
+
+            if not recent or num_entries < 4:
+                # Case insufficent data
+                msg = ":zzz: Name: {}, Level: {}, Power: {}. Insufficient data, only {} entries this week".format( get_name[0] , recent[0], recent[1], num_entries)
+                num_insufficient += 1
+
+            elif ( datetime.datetime.strptime(recent[2], "%Y-%m-%d") + datetime.timedelta(days=14) ) >=  datetime.datetime.now() :
+                # Case active
+                power_change = result[0][0] - result[-1][0]
+                growth_per_day = float(power_change) / num_entries
+                growth_per_week = growth_per_day * 7
+                percent_growth_per_week = growth_per_week /  recent[1];
+
+                msg = ":zzz: Name: {}, Level: {}, Power: {}. Active, growing {} ({}%) per week".format( get_name[0] , recent[0], recent[1], growth_per_week, percent_growth_per_week)
+                num_active += 1
+                total_growth += growth_per_week
+                total_percent_growth += percent_growth_per_week
+
+            else :
+                # Case inactive
+                msg = ":zzz: Name: {}, Level: {}, Power: {}. Inactive, last seen {}".format( get_name[0], recent[0], recent[1], recent[2])
+                num_inactive += 1
+
+            roster_msg += msg + "\n"
+
+    num_players = num_active + num_inactive + num_insufficient
+    overview_msg = "active players {} out of {}\n".format(num_active + num_insufficient, num_players)
+    overview_msg += "the average member grows {} ({}%) per week\n".format(total_growth/num_players, total_percent_growth/num_players)
+    #overview_msg += "the average active member grows {} ({}%} per week".format(total_growth/num_players, total_percent_growth/num_players)
+    embed=discord.Embed(title="Team {}".format(team.upper()), color=0x00ff00)
+    embed.add_field(name="OVERVIEW", value=overview_msg, inline=False)
+    embed.add_field(name="ROSTER ({}):".format(num_players), value=roster_msg, inline=False)
+    await ctx.send("Done.", embed=embed)
+
+
 
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
-'''
+
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
