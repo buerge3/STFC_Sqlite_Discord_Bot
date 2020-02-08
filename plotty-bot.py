@@ -79,7 +79,7 @@ def init_logger():
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
-@bot.command(description="Plot the growth of a single player. To compare the growth of different players, use the \"players\" command")
+@bot.command(brief="plot player growth", description="Plot the growth of a single player. To compare the growth of different players, use the \"players\" command")
 async def player(ctx, ppl : str):
     cur = conn.cursor()
 
@@ -125,7 +125,7 @@ async def player(ctx, ppl : str):
     ax = fig.add_subplot(111)
     line, = ax.plot(dates, values, lw=2)
     fig.autofmt_xdate()
-    ax.set_title("Growth of " + ppl + " for Two Weeks")
+    ax.set_title("Growth of " + ppl + " over last Month")
     ax.set_xlabel("Date")
     ax.set_ylabel("Power")
     ax.get_yaxis().set_major_formatter(
@@ -135,7 +135,7 @@ async def player(ctx, ppl : str):
 
     await ctx.send(msg, file=discord.File(img_save_name))
 
-@bot.command(description="Plot the growth of multiple players")
+@bot.command(brief="compare player growth", description="Plot the growth of multiple players", aliases=["compare"])
 async def players(ctx, *argv):
     args = [];
     for arg in argv:
@@ -263,7 +263,36 @@ def human_format(num):
     # add more suffixes if you need them
     return '%.2f%s' % (num, ['', 'k', 'M', 'G', 'T', 'P'][magnitude])
 
-@bot.command(description="Display the roster with active/inactive status for the given team", aliases=["roster", "cull-list"])
+@bot.command(brief="assign a name", description="Display the roster with active/inactive status for the given team", aliases=["make-default", "set-default", "make-name", "set-name", "make-display", "set-display"])
+async def name(ctx, name):
+    cur = conn.cursor()
+    sql = '''SELECT key FROM alias WHERE name="{}" ORDER BY ROWID DESC LIMIT 1'''.format(name.lower())
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    key = cur.fetchone()
+
+    if not key:
+        msg = "**[ERROR]** The name {} does not exist. Try adding it first by doing !add".format(name)
+        logging.error(msg)
+        await ctx.send(msg)
+        return
+
+    sql = '''DELETE FROM display WHERE key="{}"'''.format(key[0])
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+
+    sql = '''INSERT INTO display (key, name) VALUES ("{}", "{}")'''.format(key[0], name)
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+
+    conn.commit()
+
+    msg = 'Set \'' + name + '\' as the player display name'
+    logging.info(msg)
+    await ctx.send(msg)
+
+
+@bot.command(brief="display the roster", description="Display the roster with active/inactive status for the given team", aliases=["roster", "cull-list"])
 async def inactives(ctx, team, options='-g'):
     '''
         COMMAND OPTIONS:
@@ -289,59 +318,75 @@ async def inactives(ctx, team, options='-g'):
         # NOT SURE KNOW HOW TO IMPLEMENT THIS YET'''
     sql += " ORDER BY Power DESC"
     logging.debug('SQL: ' + sql)
-    query_res = cur.execute(sql)
+    cur.execute(sql)
+    query_res = cur.fetchall()
 
     async with ctx.message.channel.typing():
 
         for key in query_res:
-            sql2 = '''SELECT Lv, Power, Date FROM LVE WHERE PlayerKey="{}" AND Power NOT IN (SELECT Power FROM LVE WHERE PlayerKey="{}" AND Date="{}") ORDER BY Date DESC LIMIT 1;'''.format(key[0], key[0], datetime.datetime.now().strftime("%Y-%m-%d"))
+            sql2 = '''SELECT Power, Date FROM LVE WHERE PlayerKey="{}" AND Power NOT IN (SELECT Power FROM LVE WHERE PlayerKey="{}" AND Date="{}") ORDER BY Date DESC LIMIT 1;'''.format(key[0], key[0], datetime.datetime.now().strftime("%Y-%m-%d"))
             logging.debug('SQL: ' + sql2)
-            cur.executescript(sql2)
+            cur.execute(sql2)
             recent = cur.fetchone()
 
-            sql3 = '''SELECT Name FROM alias WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
+            sql3 = '''SELECT name FROM display WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
             logging.debug('SQL: ' + sql3)
             cur.execute(sql3)
             get_name = cur.fetchone()
 
-            sql4 = '''SELECT Power, Date FROM LVE WHERE PlayerKey="{}" AND Date>"{}" ORDER BY DATE DESC'''.format(key[0], datetime.datetime.now() - datetime.timedelta(days=8))
+            if not get_name:
+                sql3 = '''SELECT Name FROM alias WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
+                logging.debug('SQL: ' + sql3)
+                cur.execute(sql3)
+                get_name = cur.fetchone()
+
+            sql4 = '''SELECT Lv, Power, Date FROM LVE WHERE PlayerKey="{}" AND Date>"{}" ORDER BY DATE DESC'''.format(key[0], datetime.datetime.now() - datetime.timedelta(days=8))
             logging.debug('SQL: ' + sql4)
             cur.execute(sql4)
             result = cur.fetchall()
 
             num_entries = len(result)
 
-            if not recent or num_entries < 4:
+            if num_entries < 3:
                 # Case insufficent data
-                msg = ":zzz: Name: {}, Level: {}, Power: {}. Insufficient data, only {} entries this week".format( get_name[0] , recent[0], recent[1], num_entries)
+                msg = "```🆕 Name: {:25}| Level: {:<3}| Power: {:<8}| Insufficient data, only {} entries this week ```".format( get_name[0] , result[0][0], human_format(result[0][1]), num_entries)
                 num_insufficient += 1
 
-            elif ( datetime.datetime.strptime(recent[2], "%Y-%m-%d") + datetime.timedelta(days=14) ) >=  datetime.datetime.now() :
+            elif recent and ( datetime.datetime.strptime(recent[1], "%Y-%m-%d") + datetime.timedelta(days=14) ) >=  datetime.datetime.now() :
                 # Case active
-                power_change = result[0][0] - result[-1][0]
+                power_change = result[0][1] - result[-1][1]
                 growth_per_day = float(power_change) / num_entries
                 growth_per_week = growth_per_day * 7
-                percent_growth_per_week = growth_per_week /  recent[1];
+                percent_growth_per_week = growth_per_week /  recent[0];
 
-                msg = ":zzz: Name: {}, Level: {}, Power: {}. Active, growing {} ({}%) per week".format( get_name[0] , recent[0], recent[1], growth_per_week, percent_growth_per_week)
+                msg = "```🌿 Name: {0:<25}| Level: {1:<3}| Power: {2:<8}| Active, growing {3} ({4:.2f}%) per week ```".format( get_name[0] , result[0][0], human_format(result[0][1]), human_format(growth_per_week), percent_growth_per_week)
                 num_active += 1
                 total_growth += growth_per_week
                 total_percent_growth += percent_growth_per_week
 
             else :
                 # Case inactive
-                msg = ":zzz: Name: {}, Level: {}, Power: {}. Inactive, last seen {}".format( get_name[0], recent[0], recent[1], recent[2])
+                last_seen = ""
+                if (recent):
+                    last_seen = recent[1]
+                else:
+                    last_seen = "never"
+                msg = "```🕒 Name: {:<25}| Level: {:<3}| Power: {:<8}| Inactive, last seen {} ```".format( get_name[0], result[0][0], human_format(result[0][1]), last_seen)
                 num_inactive += 1
 
-            roster_msg += msg + "\n"
+            #roster_msg += msg + "\n"
+            logging.info(msg)
+            await ctx.send(msg)
 
     num_players = num_active + num_inactive + num_insufficient
-    overview_msg = "active players {} out of {}\n".format(num_active + num_insufficient, num_players)
-    overview_msg += "the average member grows {} ({}%) per week\n".format(total_growth/num_players, total_percent_growth/num_players)
+    #overview_msg = "active players {} out of {}\n".format(num_active + num_insufficient, num_players)
+    #overview_msg += "the average member grows {0} ({1:.2f}%) per week\n".format(human_format(total_growth/num_players), total_percent_growth/num_players)
     #overview_msg += "the average active member grows {} ({}%} per week".format(total_growth/num_players, total_percent_growth/num_players)
-    embed=discord.Embed(title="Team {}".format(team.upper()), color=0x00ff00)
-    embed.add_field(name="OVERVIEW", value=overview_msg, inline=False)
-    embed.add_field(name="ROSTER ({}):".format(num_players), value=roster_msg, inline=False)
+    embed=discord.Embed(title="Team {} Summary".format(team.upper()), color=0x00ff00)
+    #embed.add_field(name="OVERVIEW", value=overview_msg, inline=False)
+    #embed.add_field(name="ROSTER ({}):".format(num_players), value=roster_msg, inline=False)
+    embed.add_field(name="Player Count ({})".format(num_players), value='''{} Active, {} Inactive, {} New'''.format(num_active, num_inactive, num_insufficient), inline=False)
+    embed.add_field(name="Weekly Growth", value='''{0} ({1:.2f}%) per Player'''.format(human_format(total_growth/num_players), total_percent_growth/num_players), inline=False)
     await ctx.send("Done.", embed=embed)
 
 
