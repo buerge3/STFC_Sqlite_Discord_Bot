@@ -30,7 +30,7 @@ import logging
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
 token_file = "secret_vision.txt"
-x_percent = 0.12
+x_percent = 0.17
 bot = commands.Bot(command_prefix='!')
 
 # -----------------------------------------------------------------------------
