@@ -167,6 +167,9 @@ async def process_name(ctx, im, names_list, level_list):
         logging.error(msg)
         await ctx.send(msg)
         return False
+    booboo = re.search(r"2[\]\)] ", text)
+    if (bool(booboo)):
+        text = "21 " + text[booboo.end():]
     match = re.search(r"[0-9]+ \S", text)
     if (bool(match)):
         #text = re.sub(r'^\W+', '', text)

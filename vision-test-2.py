@@ -18,7 +18,7 @@ import sys
 
 # MODIFIABLE PARAMTERS
 img_path = sys.argv[1]
-x_percent = 0.17
+x_percent = 0.12
 
 # -----------------------------------------------------------------------------
 #                                    FUNCTIONS
@@ -90,6 +90,9 @@ def process_name(im, names_list, level_list):
         msg = "**[ERROR]** {0}".format(err)
         print(msg)
         return False
+    booboo = re.search(r"2[\]\)] ", text)
+    if (bool(booboo)):
+        text = "21 " + text[booboo.end():]
     match = re.search(r"[0-9]+ \S", text)
     if (bool(match)):
         #text = re.sub(r'^\W+', '', text)
