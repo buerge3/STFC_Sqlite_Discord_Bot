@@ -30,7 +30,7 @@ import logging
 # MODIFIABLE PARAMETERS
 db_name = "LVE.db"
 token_file = "secret_vision.txt"
-x_percent = 0.17
+x_percent = 0.12
 bot = commands.Bot(command_prefix='!')
 
 # -----------------------------------------------------------------------------
@@ -76,10 +76,11 @@ def add_name_to_alias(name):
 
 async def add_name_to_dict(ctx, new_name):
     # add incorrect name to dictionary
-    file = open("STFC_dict.txt", "a")
-    file.write(new_name + "\n")
+    file = open("STFC_dict.txt", "ab")
+    name_utf8 = new_name.encode('UTF-8')
+    file.write(name_utf8 + "\n".encode('UTF-8'))
     #add_name_to_alias(old_name)
-    msg = 'Added \'' + new_name+ '\' to the dictionary'
+    msg = 'Added \'' + new_name + '\' to the dictionary'
     logging.info(msg)
     await ctx.send(msg)
 
