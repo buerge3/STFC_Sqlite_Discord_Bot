@@ -96,15 +96,65 @@ async def player(ctx, ppl : str):
     else:
         key = res[0]
     #cur.execute("SELECT * FROM test1 WHERE Name=?", str(ppl))
-    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
-    logging.debug("SQL: " + sql)
-    cur.execute(sql)
+    sql1 = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
+    logging.debug("SQL: " + sql1)
+    cur.execute(sql1)
 
     value_list = cur.fetchone()
+
+    sql2 = '''SELECT name FROM display WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
+    logging.debug("SQL: " + sql2)
+    cur.execute(sql2)
+    default_name = cur.fetchone()
+
+    title = ppl;
+    alias_list = [];
+    if default_name is not None:
+        if (default_name[0].lower() == ppl.lower()):
+            title = default_name[0];
+        else:
+            alias_list.append(default_name[0].lower())
+
+    sql3 = '''SELECT name FROM alias WHERE key="{}" ORDER BY ROWID DESC'''.format(str(key))
+    logging.debug("SQL: " + sql3)
+    cur.execute(sql3)
+    list_o_names = cur.fetchall()
+    if list_o_names is not None:
+        if (list_o_names[0][0].lower() != title.lower() and list_o_names[0][0] not in alias_list):
+            alias_list.append(list_o_names[0][0])
+        if (list_o_names[-1][0].lower() != title.lower() and list_o_names[-1][0] not in alias_list):
+            alias_list.append(list_o_names[-1][0])
+        if (len(list_o_names) > 2 and list_o_names[-2][0].lower() != title.lower() and list_o_names[-2][0] not in alias_list):
+            alias_list.append(list_o_names[-2][0])
+    alias_string = ", ".join(alias_list)
+    if (len(list_o_names) > 4):
+        alias_string += "... (+%s more)" % (len(list_o_names) - len(alias_list) - 1)
+    else:
+        print("list_o_names is %d long" % len(list_o_names))
+    if (len(alias_list) > 0):
+        alias_string = "\n  Also known as: " + alias_string
+
     #msg = ''.join(str(v) for v in value_list)
     #msg = "The power of " + ppl + " is " + msg;
-    msg = "**%s**\n  Last Updated: %s\n  Lv: %s\n  Power: %s" % (ppl, value_list[0], value_list[1], '{:,}'.format(value_list[2]))
+    msg = "**%s**\n  Last Updated: %s\n  Lv: %s\n  Power: %s" % (title, value_list[0], value_list[1], '{:,}'.format(value_list[2]))
+
+    # get growth rates:
+    sql4 = '''SELECT Lv, Power, Date FROM LVE WHERE PlayerKey="{}" AND Date>"{}" ORDER BY DATE DESC'''.format(str(key), datetime.datetime.now() - datetime.timedelta(days=8))
+    logging.debug('SQL: ' + sql4)
+    cur.execute(sql4)
+    result = cur.fetchall()
+    if result is not None and len(result) > 3:
+        num_entries = len(result)
+        power_change = result[0][1] - result[-1][1]
+        growth_per_day = float(power_change) / num_entries
+        growth_per_week = growth_per_day * 7
+        percent_growth_per_week = growth_per_week / result[-1][1]
+        msg += "\n  Growth: %s (%s) per week" % (human_format(growth_per_week), '{:.2%}'.format(percent_growth_per_week))
+
+    msg += alias_string;
+
     logging.info(msg)
+
 
     dates = []
     values = []
@@ -125,7 +175,7 @@ async def player(ctx, ppl : str):
     ax = fig.add_subplot(111)
     line, = ax.plot(dates, values, lw=2)
     fig.autofmt_xdate()
-    ax.set_title("Growth of " + ppl + " over last Month")
+    ax.set_title("Growth of " + ppl + " for this Month")
     ax.set_xlabel("Date")
     ax.set_ylabel("Power")
     ax.get_yaxis().set_major_formatter(
@@ -135,8 +185,8 @@ async def player(ctx, ppl : str):
 
     await ctx.send(msg, file=discord.File(img_save_name))
 
-@bot.command(brief="compare player growth", description="Plot the growth of multiple players", aliases=["compare"])
-async def players(ctx, *argv):
+@bot.command(brief="compare player growth", description="Plot the growth of multiple players", aliases=["players"])
+async def compare(ctx, *argv):
     args = [];
     for arg in argv:
         args.append(arg)
@@ -292,8 +342,8 @@ async def name(ctx, name):
     await ctx.send(msg)
 
 
-@bot.command(brief="display the roster", description="Display the roster with active/inactive status for the given team", aliases=["roster", "cull-list"])
-async def inactives(ctx, team, options='-g'):
+@bot.command(brief="display the roster", description="Display the roster with active/inactive status for the given team")
+async def roster(ctx, team, options='-g'):
     '''
         COMMAND OPTIONS:
         -n or -a   = sort my name/alphabetically
@@ -357,9 +407,10 @@ async def inactives(ctx, team, options='-g'):
                 power_change = result[0][1] - result[-1][1]
                 growth_per_day = float(power_change) / num_entries
                 growth_per_week = growth_per_day * 7
-                percent_growth_per_week = growth_per_week /  recent[0];
+                #percent_growth_per_day = growth_per_day /  recent[0];
+                percent_growth_per_week = growth_per_week / result[-1][1]
 
-                msg = "```🌿 Name: {0:<25}| Level: {1:<3}| Power: {2:<8}| Active, growing {3} ({4:.2f}%) per week ```".format( get_name[0] , result[0][0], human_format(result[0][1]), human_format(growth_per_week), percent_growth_per_week)
+                msg = "```🌿 Name: {0:<25}| Level: {1:<3}| Power: {2:<8}| Active, growing {3} ({4:.2%}) per week ```".format( get_name[0] , result[0][0], human_format(result[0][1]), human_format(growth_per_week), percent_growth_per_week)
                 num_active += 1
                 total_growth += growth_per_week
                 total_percent_growth += percent_growth_per_week
