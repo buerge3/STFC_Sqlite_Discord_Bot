@@ -233,12 +233,13 @@ def get_key (name):
 # @param lv_list, a list of player levels
 # @param power_list, a list of player power
 # @param which alliance the roster screenshot belongs to
-async def store_in_db(ctx, names_list, lv_list, power_list, team):
+async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
 
     cur = conn.cursor()
 
     success_count = 0;
     warn_count = 0;
+    power_err_count = 0;
     # Store the data for each name in the database
     for i in range(0, len(names_list)):
         target = ""
@@ -250,6 +251,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
 
         if (names_list[i] == ""):
             continue
+
         if i < len(lv_list) and i < len(power_list):
             key = get_key(names_list[i].lower())
 
@@ -263,6 +265,37 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                 logging.warning(err_msg)
                 await ctx.send(err_msg)
                 continue
+
+            ## confirm the power value is within the valid range!
+            if check_power and target=="LVE":
+                sql = '''SELECT Power FROM LVE WHERE PlayerKey="{}" ORDER BY Date DESC LIMIT 1;'''.format(key, key, datetime.datetime.now().strftime("%Y-%m-%d"))
+                logging.debug("SQL: " + sql)
+                cur.execute(sql)
+                recent = cur.fetchone()
+                if recent is None or len(recent) == 0:
+                    target = "backlog"
+                    err_msg = "**[WARNING]** The player {} is new, please confirm that their power is {} by typing !confirm {}".format(names_list[i], power_list[i], names_list[i])
+                    logging.warning(err_msg)
+                    await ctx.send(err_msg)
+                    power_err_count += 1
+                else:
+                    try:
+                        power = int(str(power_list[i]).replace(',', ''))
+                        delta_power = (power - recent[0]) / power
+                        if (abs(delta_power) > 0.1):
+                            target = "backlog"
+                            err_msg = "**[WARNING]** The player {} has power {}, which seems wrong. If it is correct, please type !confirm {}".format(names_list[i], power_list[i], names_list[i])
+                            logging.warning(err_msg)
+                            await ctx.send(err_msg)
+                            power_err_count += 1
+
+                    except ValueError as err:
+                        #err_msg = "**[ERROR]** Cannot interpret the power of player {} as an integer; Power: {}".format(names_list[i], str(power_list[i]).replace(',', ''))
+                        err_msg = "**[ERROR]** {}".format(err)
+                        logging.warning(err_msg, exc_info=True)
+                        await ctx.send(err_msg)
+                        continue
+
             try:
                 if (target == "LVE"):
                     sql = '''INSERT INTO {} (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, key,
@@ -293,7 +326,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team):
                 logging.info(msg)
                 await ctx.send(msg)
     conn.commit()
-    return success_count, warn_count
+    return success_count, warn_count, power_err_count
 
 # func_alias
 # @param ctx, Discord msg context
@@ -348,7 +381,7 @@ async def store_in_backlog(player_data):
 
 # store_in_db_from_backlog
 # @param names, a list of names to restore from the backlog
-async def store_in_db_from_backlog(ctx, names):
+async def store_in_db_from_backlog(ctx, names, check_power):
     # Get a key for the new entry, or the key for the old name if the name is already in the database
         cur = conn.cursor()
         names_list = []
@@ -371,7 +404,7 @@ async def store_in_db_from_backlog(ctx, names):
             logging.debug('SQL: ' + sql)
             cur.execute(sql)
 
-        await store_in_db(ctx, names_list, lv_list, power_list, alliance);
+        await store_in_db(ctx, names_list, lv_list, power_list, alliance, check_power);
 
 # process_screenshot
 # @param i, index of the screenshot to process
@@ -432,8 +465,8 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     for i in range(7):
         if not exclude[i]:
             new_power_list.append(power_list[i])
-    success_count, warn_count = await store_in_db(ctx, names_list, level_list, new_power_list, alliance_name.lower())
-    return success_count, warn_count
+    success_count, warn_count, power_err_count = await store_in_db(ctx, names_list, level_list, new_power_list, alliance_name.lower(), True)
+    return success_count, warn_count, power_err_count
 
 # init_logger
 # initialize the logger to output msgs of lv INFO or higher to the console,
@@ -479,7 +512,7 @@ async def add(ctx):
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         key = get_key(arg.lower())
 
-    await store_in_db_from_backlog(ctx, args);
+    await store_in_db_from_backlog(ctx, args, True);
 
     file.close()
 
@@ -504,10 +537,11 @@ async def alliance(ctx, alliance_name):
         success_count = 0
         already_uploaded_count = 0;
         failed_count = 0
+        power_warn_count = 0;
         for i in range(num_attachments):
             try:
                 async with ctx.message.channel.typing():
-                    num_success, num_warn = await process_screenshot(ctx, i, alliance_name, mispelled_list)
+                    num_success, num_warn, num_power_warn = await process_screenshot(ctx, i, alliance_name, mispelled_list)
             except UnicodeDecodeError:
                 msg = "**[ERROR]** The dictionary contains at least one non-unicode character"
                 logging.error(msg)
@@ -515,12 +549,17 @@ async def alliance(ctx, alliance_name):
                 return
             success_count += num_success
             already_uploaded_count += num_warn
-            failed_count += 7 - num_success - num_warn
+            power_warn_count += num_power_warn
+            failed_count += 7 - num_success - num_warn - num_power_warn
         failed_count -= len(mispelled_list)
         if len(mispelled_list) == 0:
             mispelled_msg = "No mispelled names"
         else:
             mispelled_msg = ", ".join(mispelled_list)
+        if power_warn_count == 0:
+            power_msg = "No power warnings"
+        else:
+            power_msg = "The power of {} players looks suspicious, if these values are correct then do !confirm".format(power_warn_count)
         if failed_count == 0:
             failed_msg = "No errors"
         else:
@@ -528,6 +567,7 @@ async def alliance(ctx, alliance_name):
         embed=discord.Embed(title="Upload Report for {}".format(ctx.message.author), color=0xff0000)
         embed.add_field(name="SUCCESS ({}):".format(success_count), value="Uploaded data for {} unique players".format(success_count), inline=False)
         embed.add_field(name="UNRECOGNIZED NAMES ({}):".format(len(mispelled_list)), value=mispelled_msg, inline=False)
+        embed.add_field(name="POWER WARNINGS ({}):".format(power_warn_count), value=power_msg)
         embed.add_field(name="ALREADY UPLOADED ({}):".format(already_uploaded_count), value="No data was uploaded for {} names since their data for today is already stored".format(already_uploaded_count), inline=False)
         embed.add_field(name="FAILED ({}):".format(failed_count), value=failed_msg, inline=False)
         await ctx.send("Done.", embed=embed)
@@ -565,8 +605,14 @@ async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
         await ctx.send(msg)
 
     # store the data in the backlog into the LVE db
-    await store_in_db_from_backlog(ctx, [incorrect_name_spelling]);
+    await store_in_db_from_backlog(ctx, [incorrect_name_spelling], True);
 
+@bot.command(description="Confirm that the power value of a player in the backlog is correct")
+async def confirm(ctx):
+    logging.debug("Player " + str(ctx.message.author) + " running command \'confirm\'")
+    args = ctx.message.content[9:].split(' ')
+    for arg in args:
+        await store_in_db_from_backlog(ctx, args, False)
 
 @bot.command(description="Display the daily upload status for a team", aliases=["upload-status"])
 async def status(ctx, team ):
