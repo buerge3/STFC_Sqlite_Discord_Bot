@@ -650,6 +650,63 @@ async def status(ctx, team ):
         logging.info(msg)
         await ctx.send(msg)
 
+# guess
+# list all guesses for the specified player ordered first by level and then by power
+@bot.command(brief="Guess the name in the backlog", description="Guess which player a name in the backlog belongs to")
+async def guess(ctx, player, limit=3):
+    cur = conn.cursor()
+    logging.debug("Player " + str(ctx.message.author) + " running command \'guess\'")
+    sql = '''SELECT Count(*) FROM backlog WHERE name="{}"'''.format(player.lower())
+    cur.execute(sql)
+    res = cur.fetchone()
+    if res is None or len(res) == 0:
+        msg = '''No such player is in the backlog'''
+        logging.info(msg)
+        await ctx.send(msg)
+        return
+
+    sql = '''
+        SELECT Name, Lv, Power, Date FROM
+        (
+            SELECT D.Name, C.Date, C.Lv, C.Power, IFNULL (A.Power - B.Power, 0) AS Diff, IFNULL (A.Lv - B.Lv, 0) AS Lv_diff
+            FROM [backlog] A
+                INNER JOIN [LVE] C
+                    ON A.Alliance = C.Alliance
+                    AND julianday(C.Date) < julianday(A.Date)
+                    AND julianday(C.Date, '+7 days') > julianday(A.date)
+                INNER JOIN
+                (
+                    SELECT PlayerKey, MAX(Date) maxDate, Power, Lv
+                    FROM [LVE]
+                    GROUP BY PlayerKey
+                ) B ON C.PlayerKey = B.PlayerKey AND
+                    C.Date = B.maxDate
+            INNER JOIN
+            (
+                SELECT Name, key
+                FROM [alias]
+                GROUP BY key
+            ) D ON C.PlayerKey = D.Key
+
+            WHERE A.Name = "{}"
+
+
+            ORDER BY ABS(Lv_diff), ABS(Diff) ASC
+        )
+        LIMIT "{}"
+        '''.format(player.lower(), limit)
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    result = cur.fetchall()
+
+    msg = ""
+    if result and len(result) > 0:
+        msg += "Guesses for %s:\n" % player
+    for row in result:
+        msg += "\tName: {}, Lv: {}, Power: {}, Date: {}\n".format(row[0], row[1], row[2], row[3])
+    logging.info(msg)
+    await ctx.send(msg)
+
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
