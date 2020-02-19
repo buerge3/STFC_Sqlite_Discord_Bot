@@ -90,7 +90,7 @@ def process_name(im, names_list, level_list):
         msg = "**[ERROR]** {0}".format(err)
         print(msg)
         return False
-    booboo = re.search(r"[1-5][\]\)] ", text)
+    booboo = re.search(r"[1-5][\]\)l] ", text)
     if (bool(booboo)):
         text = text[booboo.start()] + "1 " + text[booboo.end():]
     match = re.search(r"[0-9]+ \S", text)

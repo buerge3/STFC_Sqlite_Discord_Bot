@@ -167,7 +167,7 @@ async def process_name(ctx, im, names_list, level_list):
         logging.error(msg)
         await ctx.send(msg)
         return False
-    booboo = re.search(r"[1-5][\]\)] ", text)
+    booboo = re.search(r"[1-5][\]\)l] ", text)
     if (bool(booboo)):
         text = text[booboo.start()] + "1 " + text[booboo.end():]
     match = re.search(r"[0-9]+ \S", text)
@@ -298,7 +298,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
 
             try:
                 if (target == "LVE"):
-                    sql = '''INSERT INTO {} (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, key,
+                    sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(key,
                         datetime.datetime.now().strftime("%Y-%m-%d"),
                         team,
                         int(lv_list[i]),
@@ -311,7 +311,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
                     #    team,
                     #    int(lv_list[i]),
                     #    int(power_list[i].replace(',', '')))
-                    await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, int(lv_list[i]), int(power_list[i].replace(',', ''))))
+                    await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, lv_list[i], power_list[i]))
                 
             except ValueError as err:
                 #err_msg = "**[ERROR]** Cannot interpret the power of player {} as an integer; Power: {}".format(names_list[i], str(power_list[i]).replace(',', ''))
@@ -489,14 +489,17 @@ def init_logger():
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
-@bot.command(description="pong")
+# ping
+# simply sends the message "pong". Used to confirm that the bot is still alive
+@bot.command(brief="Pong", description="Pong")
 async def ping(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'ping\'")
     logging.info('pong')
     await ctx.send('pong')
 
-# Add a player name to the dictionary. !add <player_name>
-@bot.command(description="Add a player name to the dictionary. !add <player_name>")
+# add
+# writes any number of space delimited names into the dictonary file
+@bot.command(brief="Add a new player", description="Add a new player name to the dictionary. !add <player_name>")
 async def add(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'add\'")
     args = ctx.message.content[5:].split(' ')
@@ -516,8 +519,10 @@ async def add(ctx):
 
     file.close()
 
-# Add new roster screenshot data. !alliance <alliance_name> [attachment=image]
-@bot.command(description="Add new roster screenshot data.", aliases=["upload", "upload-alliance"])
+# alliance
+# extracts data from the STFC screenshots attached to the user message
+# via image processing and attempts to store this data in the LVE database
+@bot.command(brief="Upload screenshot data", description="Add new roster screenshot data.", aliases=["upload", "upload-alliance"])
 async def alliance(ctx, alliance_name):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alliance\'")
     num_attachments = len(ctx.message.attachments)
@@ -529,7 +534,7 @@ async def alliance(ctx, alliance_name):
     else:
 
         # Delete any data currently stored in the backlog
-        del_backlog = '''DELETE FROM backlog''';
+        del_backlog = '''DELETE FROM backlog WHERE alliance="{}"'''.format(alliance_name);
         logging.debug("SQL: " + del_backlog)
         conn.cursor().execute(del_backlog)
 
@@ -572,8 +577,9 @@ async def alliance(ctx, alliance_name):
         embed.add_field(name="FAILED ({}):".format(failed_count), value=failed_msg, inline=False)
         await ctx.send("Done.", embed=embed)
 
-
-@bot.command(description="Get the time until the next reset for entering data")
+# time
+# displays the time until midnight
+@bot.command(brief="Get time until reset", description="Get the time until the next calendar day, which is when new data can be uploaded")
 async def time(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'time\'")
     midnight = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
@@ -591,30 +597,35 @@ async def time(ctx):
     logging.info(msg)
     await ctx.send(msg)
 
-@bot.command(description="Create a new alias for a player", aliases=["alias", "link"])
+# correct
+# adds a new player name to the dictionary and make it an alias of an existing player
+@bot.command(brief="Create an alias", description="Create a new alias for a player", aliases=["alias", "link"])
 async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
 
     # make the correct name an alias of the incorrect name
-    if (incorrect_name_spelling != correct_name_spelling):
+    if (incorrect_name_spelling.lower() != correct_name_spelling.lower()):
         await add_name_to_dict(ctx, incorrect_name_spelling) # add incorrect name to dictionary
         await func_alias(ctx, incorrect_name_spelling, correct_name_spelling) # create the alias
+        await store_in_db_from_backlog(ctx, [incorrect_name_spelling], True); # store the data in the backlog into the LVE db
     else:
         msg = "**[WARNING]** The old name and new names are the same, so the command was not run. Try using 'add' instead!"
         logging.warning(msg)
         await ctx.send(msg)
 
-    # store the data in the backlog into the LVE db
-    await store_in_db_from_backlog(ctx, [incorrect_name_spelling], True);
-
-@bot.command(description="Confirm that the power value of a player in the backlog is correct")
+# confirm
+# sends the data of any number of space delimited names in the backlog
+# to the LVE database without checking their power values
+@bot.command(brief="Confirm a suspicious power", description="Confirm that the power value of a player in the backlog is correct")
 async def confirm(ctx):
     logging.debug("Player " + str(ctx.message.author) + " running command \'confirm\'")
     args = ctx.message.content[9:].split(' ')
-    for arg in args:
-        await store_in_db_from_backlog(ctx, args, False)
+    await store_in_db_from_backlog(ctx, args, False)
 
-@bot.command(description="Display the daily upload status for a team", aliases=["upload-status"])
+# status
+# shows the number of names that have been successfully uploaded for
+# a given team, and lists the names still in the backlog
+@bot.command(brief="Show upload status", description="Show the daily upload status and backlog list for a team", aliases=["upload-status"])
 async def status(ctx, team ):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'status\'")
@@ -623,15 +634,15 @@ async def status(ctx, team ):
     cur.execute(sql)
     num_data = cur.fetchone()
     if num_data is not None and num_data[0] > 0:
-        sql = '''SELECT Name FROM backlog WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
+        sql = '''SELECT Name, Lv, Power FROM backlog WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
         logging.debug('SQL: ' + sql)
         cur.execute(sql)
         player_data_list = cur.fetchall()
         msg = "Successfully uploaded {} names. There are {} mispelled names in the backlog.".format(num_data[0], len(player_data_list))
-        if len(player_data_list) > 0:
+        if player_data_list and len(player_data_list) > 0:
             msg += "\nBACKLOG:\n"
             for row in player_data_list:
-                msg += "\t" + row[0] + "\n"
+                msg += "\tName: %s, Lv: %s, Power: %s\n" % (row[0], row[1], row[2])
         logging.info(msg)
         await ctx.send(msg)
     else:
@@ -643,15 +654,12 @@ async def status(ctx, team ):
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
 
-
-'''@bot.event
+@bot.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.BadArgument):
-        await ctx.send("[ERROR] Bad argument")
-    if isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send("[ERROR] Missing required argument")
-    else:
-        await ctx.send("[ERROR] {}".format(error))'''
+    msg = "**[ERROR]** %s" % (error)
+    logging.warning(msg)
+    await ctx.send(msg)
+    raise
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
