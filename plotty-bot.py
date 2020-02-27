@@ -79,7 +79,7 @@ def init_logger():
 # -----------------------------------------------------------------------------
 #                     DISCORD BOT COMMANDS & EVENTS
 # -----------------------------------------------------------------------------
-@bot.command(brief="plot player growth", description="Plot the growth of a single player. To compare the growth of different players, use the \"players\" command")
+@bot.command(brief="Plot the growth of a player", description="Plot the growth of a single player. To compare the growth of different players, use the \"players\" command", aliases=["plot", "plot-one"])
 async def player(ctx, ppl : str):
     cur = conn.cursor()
 
@@ -88,8 +88,8 @@ async def player(ctx, ppl : str):
     cur.execute(sql)
     res = cur.fetchone()
     key = -1
-    if res is None:
-        msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
+    if res is None or len(res) == 0:
+        msg = "**[WARNING]** The player " + ppl + " does not exist. Please check your spelling and try again."
         logging.warning(msg)
         await ctx.send(msg)
         return
@@ -101,6 +101,11 @@ async def player(ctx, ppl : str):
     cur.execute(sql1)
 
     value_list = cur.fetchone()
+    if value_list is None or len(value_list) == 0:
+        msg = "**[WARNING]** The player " + ppl + " does not have any data."
+        logging.warning(msg)
+        await ctx.send(msg)
+        return
 
     sql2 = '''SELECT name FROM display WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(str(key))
     logging.debug("SQL: " + sql2)
@@ -169,23 +174,23 @@ async def player(ctx, ppl : str):
         dates.append(parser.parse(row[0]))
         values.append(row[2])
 
-
-    fig = plt.figure()
-    plt.style.use('dark_background')
-    ax = fig.add_subplot(111)
-    line, = ax.plot(dates, values, lw=2)
-    fig.autofmt_xdate()
-    ax.set_title("Growth of " + ppl + " for this Month")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Power")
-    ax.get_yaxis().set_major_formatter(
-        tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
-    plt.savefig(img_save_name, bbox_inches="tight")
-    plt.close()
+    async with ctx.message.channel.typing():
+        fig = plt.figure()
+        plt.style.use('dark_background')
+        ax = fig.add_subplot(111)
+        line, = ax.plot(dates, values, lw=2)
+        fig.autofmt_xdate()
+        ax.set_title("Growth of " + ppl + " for this Month")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Power")
+        ax.get_yaxis().set_major_formatter(
+            tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
+        plt.savefig(img_save_name, bbox_inches="tight")
+        plt.close()
 
     await ctx.send(msg, file=discord.File(img_save_name))
 
-@bot.command(brief="compare player growth", description="Plot the growth of multiple players", aliases=["players"])
+@bot.command(brief="Plot the growth of multiple players", description="Plot the growth of the specified players on a single graph", aliases=["players", "plot-many", "plot-several", "plot-multiple"])
 async def compare(ctx, *argv):
     args = [];
     for arg in argv:
@@ -193,44 +198,44 @@ async def compare(ctx, *argv):
 
     cur = conn.cursor()
 
-    fig = plt.figure()
-    plt.style.use('dark_background')
-    ax = fig.add_subplot(111)
-    for i in range(len(argv)):
-        ppl = argv[i]
-        key = -1
-        sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
-        logging.debug("SQL: " + sql)
-        cur.execute(sql)
-        res = cur.fetchone()
-        key = -1
-        if res is None:
-            msg = "The player " + ppl + " does not exist. Please check your spelling and try again."
-            logging.warning(msg)
-            await ctx.send(msg)
-            return
-        else:
-            key = res[0]
-        sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}"'''.format(str(key))
-        logging.debug("SQL: " + sql)
-        cur.execute(sql)
-        value_list = cur.fetchall()
-        dates = []
-        values = []
-        for row in value_list:
-            dates.append(parser.parse(row[0]))
-            values.append(row[2])
-        line, = ax.plot(dates, values, lw=2, label=argv[i])
+    async with ctx.message.channel.typing():
+        fig = plt.figure()
+        plt.style.use('dark_background')
+        ax = fig.add_subplot(111)
+        for i in range(len(argv)):
+            ppl = argv[i]
+            key = -1
+            sql = '''SELECT key FROM alias WHERE name="{}"'''.format(ppl.lower())
+            logging.debug("SQL: " + sql)
+            cur.execute(sql)
+            res = cur.fetchone()
+            if res is None:
+                msg = "**[WARNING]** The player " + ppl + " does not exist. Please check your spelling and try again."
+                logging.warning(msg)
+                await ctx.send(msg)
+                continue
+            else:
+                key = res[0]
+            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now')'''.format(str(key))
+            logging.debug("SQL: " + sql)
+            cur.execute(sql)
+            value_list = cur.fetchall()
+            dates = []
+            values = []
+            for row in value_list:
+                dates.append(parser.parse(row[0]))
+                values.append(row[2])
+            line, = ax.plot(dates, values, lw=2, label=argv[i])
 
-    fig.autofmt_xdate()
-    ax.set_title("Power of " + str(len(argv)) + " Players")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Power")
-    ax.get_yaxis().set_major_formatter(
-        tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
-    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-    plt.savefig(img_save_name, bbox_inches="tight")
-    plt.close()
+        fig.autofmt_xdate()
+        ax.set_title("Power of " + str(len(argv)) + " Players this Month")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Power")
+        ax.get_yaxis().set_major_formatter(
+            tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
+        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        plt.savefig(img_save_name, bbox_inches="tight")
+        plt.close()
 
     await ctx.send(file=discord.File(img_save_name))
 
@@ -305,6 +310,60 @@ async def alliances(*argv):
 
     await ctx.send(file=discord.File(img_save_name))
 '''
+@bot.command(brief="Plot the growth of all players in an alliance", description="Plot the growth of all players in an alliance within an optionally specified level range on a single graph", aliases=["plot-alliance", "plot-all"])
+async def alliance(ctx, team : str, min=1,  max=40):
+
+    cur = conn.cursor()
+
+    sql = '''SELECT PlayerKey FROM LVE WHERE Alliance="{}" AND Date>date("now","-2 days") AND Lv>="{}" AND Lv <="{}" GROUP BY PlayerKey ORDER BY Power DESC'''.format(team.lower(), str(min), str(max))
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    query_res = cur.fetchall()
+
+    if query_res is None or len(query_res) == 0:
+        msg = "**[WARNING]** No results found for team {}".format(team)
+        logging.warning(msg)
+        await ctx.send(msg)
+        return
+
+    async with ctx.message.channel.typing():
+        fig = plt.figure()
+        plt.style.use('dark_background')
+        ax = fig.add_subplot(111)
+        for key in query_res:
+            sql3 = '''SELECT name FROM display WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
+            logging.debug('SQL: ' + sql3)
+            cur.execute(sql3)
+            get_name = cur.fetchone()
+
+            if not get_name:
+                sql3 = '''SELECT Name FROM alias WHERE key="{}" ORDER BY ROWID DESC LIMIT 1'''.format(key[0])
+                logging.debug('SQL: ' + sql3)
+                cur.execute(sql3)
+                get_name = cur.fetchone()
+            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now')'''.format(str(key[0]))
+            logging.debug("SQL: " + sql)
+            cur.execute(sql)
+            value_list = cur.fetchall()
+            dates = []
+            values = []
+            for row in value_list:
+                dates.append(parser.parse(row[0]))
+                values.append(row[2])
+            line, = ax.plot(dates, values, lw=2, label=get_name[0])
+
+        fig.autofmt_xdate()
+        ax.set_title("Power of " + str(len(query_res)) + " Players this Month")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Power")
+        ax.get_yaxis().set_major_formatter(
+            tkr.FuncFormatter(lambda x, p: format(int(x), ',')))
+        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        plt.savefig(img_save_name, bbox_inches="tight")
+        plt.close()
+
+    await ctx.send(file=discord.File(img_save_name))
+
 def human_format(num):
     magnitude = 0
     while abs(num) >= 1000:
@@ -313,8 +372,8 @@ def human_format(num):
     # add more suffixes if you need them
     return '%.2f%s' % (num, ['', 'k', 'M', 'G', 'T', 'P'][magnitude])
 
-@bot.command(brief="assign a name", description="Display the roster with active/inactive status for the given team", aliases=["make-default", "set-default", "make-name", "set-name", "make-display", "set-display"])
-async def name(ctx, name):
+@bot.command(brief="Assign a display name", description="Designate the case-sensitive display name of a player", aliases=["make-default", "set-default", "make-name", "set-name", "make-display", "set-display"])
+async def name(ctx, name : str):
     cur = conn.cursor()
     sql = '''SELECT key FROM alias WHERE name="{}" ORDER BY ROWID DESC LIMIT 1'''.format(name.lower())
     logging.debug('SQL: ' + sql)
@@ -342,8 +401,8 @@ async def name(ctx, name):
     await ctx.send(msg)
 
 
-@bot.command(brief="display the roster", description="Display the roster with active/inactive status for the given team")
-async def roster(ctx, team, options='-g'):
+@bot.command(brief="Display the roster", description="Display the roster with active/inactive status for the given team")
+async def roster(ctx, team : str, options='-g'):
     '''
         COMMAND OPTIONS:
         -n or -a   = sort my name/alphabetically
@@ -359,7 +418,7 @@ async def roster(ctx, team, options='-g'):
     cur = conn.cursor()
 
 
-    sql = '''SELECT PlayerKey FROM LVE WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
+    sql = '''SELECT PlayerKey FROM LVE WHERE Alliance="{}" AND Date>date("now","-2 days") GROUP BY PlayerKey'''.format(team.lower())
     '''if options == "-n" or options == "-a":
         # DON'T KNOW HOW TO IMPLEMENT THIS YET
     elif (options == "-p"):
@@ -430,6 +489,11 @@ async def roster(ctx, team, options='-g'):
             await ctx.send(msg)
 
     num_players = num_active + num_inactive + num_insufficient
+    if num_players == 0:
+        msg = "No data has been uploaded for team {} today".format(team)
+        logging.info(msg)
+        await ctx.send(msg)
+        return
     #overview_msg = "active players {} out of {}\n".format(num_active + num_insufficient, num_players)
     #overview_msg += "the average member grows {0} ({1:.2f}%) per week\n".format(human_format(total_growth/num_players), total_percent_growth/num_players)
     #overview_msg += "the average active member grows {} ({}%} per week".format(total_growth/num_players, total_percent_growth/num_players)
@@ -446,6 +510,12 @@ async def roster(ctx, team, options='-g'):
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
 
+@bot.event
+async def on_command_error(ctx, error):
+    msg = "**[ERROR]** %s" % (error)
+    logging.error(msg)
+    await ctx.send(msg)
+    raise
 
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
