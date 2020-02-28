@@ -32,6 +32,7 @@ db_name = "LVE.db"
 token_file = "secret_vision.txt"
 x_percent = 0.12
 bot = commands.Bot(command_prefix='!')
+SPELL = SpellChecker(language=None, case_sensitive=False)
 
 # -----------------------------------------------------------------------------
 #                        DATABASE CONNECTION SCRIPT
@@ -191,8 +192,6 @@ async def process_name(ctx, im, names_list, level_list):
 # @param names_list, a list of player names to check the spelling of
 #         using the dictionary file 'STFC_dict.txt'
 async def check_spelling(ctx, names_list, mispelled):
-    spell = SpellChecker(language=None, case_sensitive=False)
-    spell.word_frequency.load_text_file("STFC_dict.txt")
     
     for i in range(len(names_list)):
         if (names_list[i] == "DELETE_ME"):
@@ -515,6 +514,7 @@ async def add(ctx):
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         key = get_key(arg.lower())
 
+    SPELL.word_frequency.load_words(args)
     await store_in_db_from_backlog(ctx, args, True);
 
     file.close()
@@ -523,7 +523,7 @@ async def add(ctx):
 # extracts data from the STFC screenshots attached to the user message
 # via image processing and attempts to store this data in the LVE database
 @bot.command(brief="Upload screenshot data", description="Add new roster screenshot data.", aliases=["upload", "upload-alliance"])
-async def alliance(ctx, alliance_name):
+async def alliance(ctx, alliance_name : str):
     logging.debug("Player " + str(ctx.message.author) + " running command \'alliance\'")
     num_attachments = len(ctx.message.attachments)
     if num_attachments < 1:
@@ -600,7 +600,7 @@ async def time(ctx):
 # correct
 # adds a new player name to the dictionary and make it an alias of an existing player
 @bot.command(brief="Create an alias", description="Create a new alias for a player", aliases=["alias", "link"])
-async def correct(ctx, incorrect_name_spelling, correct_name_spelling ):
+async def correct(ctx, incorrect_name_spelling : str, correct_name_spelling : str):
     logging.debug("Player " + str(ctx.message.author) + " running command \'correct\'")
 
     # make the correct name an alias of the incorrect name
@@ -626,7 +626,7 @@ async def confirm(ctx):
 # shows the number of names that have been successfully uploaded for
 # a given team, and lists the names still in the backlog
 @bot.command(brief="Show upload status", description="Show the daily upload status and backlog list for a team", aliases=["upload-status"])
-async def status(ctx, team ):
+async def status(ctx, team : str):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'status\'")
     sql = '''SELECT COUNT(*) FROM LVE  WHERE Alliance="{}" AND Date="{}"'''.format(team.lower(), datetime.datetime.now().strftime("%Y-%m-%d"))
@@ -653,7 +653,7 @@ async def status(ctx, team ):
 # guess
 # list all guesses for the specified player ordered first by level and then by power
 @bot.command(brief="Guess the name in the backlog", description="Guess which player a name in the backlog belongs to")
-async def guess(ctx, player, limit=3):
+async def guess(ctx, player : str, limit=3):
     cur = conn.cursor()
     logging.debug("Player " + str(ctx.message.author) + " running command \'guess\'")
     sql = '''SELECT Count(*) FROM backlog WHERE name="{}"'''.format(player.lower())
@@ -707,6 +707,47 @@ async def guess(ctx, player, limit=3):
     logging.info(msg)
     await ctx.send(msg)
 
+# missing
+# list all the players that have data in the last week, but no data for today
+@bot.command(brief="Find missing players", description="List all the players that have data in the last week, but no data for today")
+async def missing(ctx, team : str):
+    sql = '''
+        SELECT Name, Lv, Power, Date FROM
+        (
+            SELECT C.Name, A.Date, A.Lv, A.Power
+            FROM [LVE] A
+            INNER JOIN
+            (
+                SELECT PlayerKey, MAX(Date) maxDate, Power, Lv
+                FROM [LVE]
+                WHERE julianday(Date, '+7 days') > julianday('now', 'localtime')
+                GROUP BY PlayerKey
+            ) B ON A.PlayerKey = B.PlayerKey AND
+                A.Date = B.maxDate AND
+                B.maxDate != date('now', 'localtime') AND
+                A.Alliance = "{}"
+            INNER JOIN
+            (
+                SELECT Name, key
+                FROM [alias]
+                GROUP BY key
+            ) C ON A.PlayerKey = C.Key
+
+        )
+        ORDER BY Power DESC
+        '''.format(player.lower())
+    logging.debug('SQL: ' + sql)
+    cur.execute(sql)
+    result = cur.fetchall()
+
+    msg = ""
+    if result and len(result) > 0:
+        msg += "Missing players from %s:\n" % team
+    for row in result:
+        msg += "\tName: {}, Lv: {}, Power: {}, Date: {}\n".format(row[0], row[1], row[2], row[3])
+    logging.info(msg)
+    await ctx.send(msg)
+
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
@@ -725,3 +766,4 @@ init_logger()
 f = open(token_file, "r")
 TOKEN = f.read()
 bot.run(TOKEN)
+SPELL.word_frequency.load_text_file("STFC_dict.txt")

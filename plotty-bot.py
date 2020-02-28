@@ -164,7 +164,7 @@ async def player(ctx, ppl : str):
     dates = []
     values = []
 
-    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now') '''.format(str(key))
+    sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now', 'localtime') '''.format(str(key))
     logging.debug("SQL: " + sql)
     cur.execute(sql)
 
@@ -216,7 +216,7 @@ async def compare(ctx, *argv):
                 continue
             else:
                 key = res[0]
-            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now')'''.format(str(key))
+            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now', 'localtime')'''.format(str(key))
             logging.debug("SQL: " + sql)
             cur.execute(sql)
             value_list = cur.fetchall()
@@ -341,7 +341,7 @@ async def alliance(ctx, team : str, min=1,  max=40):
                 logging.debug('SQL: ' + sql3)
                 cur.execute(sql3)
                 get_name = cur.fetchone()
-            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now')'''.format(str(key[0]))
+            sql = '''SELECT Date, Lv, Power FROM LVE WHERE PlayerKey="{}" AND julianday(Date, '+1 month') > julianday('now', 'localtime')'''.format(str(key[0]))
             logging.debug("SQL: " + sql)
             cur.execute(sql)
             value_list = cur.fetchall()
