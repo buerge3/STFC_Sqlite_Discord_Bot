@@ -33,6 +33,7 @@ token_file = "secret_vision.txt"
 x_percent = 0.12
 bot = commands.Bot(command_prefix='!')
 SPELL = SpellChecker(language=None, case_sensitive=False)
+SPELL.word_frequency.load_text_file("STFC_dict.txt")
 
 # -----------------------------------------------------------------------------
 #                        DATABASE CONNECTION SCRIPT
@@ -198,11 +199,11 @@ async def check_spelling(ctx, names_list, mispelled):
             continue
         word = names_list[i]
 
-        if word in spell:
+        if word in SPELL:
             names_list[i] = word
             logging.debug(word + " is spelled correctly!")
         else:
-            cor = spell.correction(word)
+            cor = SPELL.correction(word)
             if (cor != word):
                 logging.debug("Corrected '{}' to '{}'".format(word, cor))
                 names_list[i] = cor;
@@ -711,6 +712,7 @@ async def guess(ctx, player : str, limit=3):
 # list all the players that have data in the last week, but no data for today
 @bot.command(brief="Find missing players", description="List all the players that have data in the last week, but no data for today")
 async def missing(ctx, team : str):
+    cur = conn.cursor()
     sql = '''
         SELECT Name, Lv, Power, Date FROM
         (
@@ -735,7 +737,7 @@ async def missing(ctx, team : str):
 
         )
         ORDER BY Power DESC
-        '''.format(player.lower())
+        '''.format(team.lower())
     logging.debug('SQL: ' + sql)
     cur.execute(sql)
     result = cur.fetchall()
@@ -751,14 +753,14 @@ async def missing(ctx, team : str):
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
-
+'''
 @bot.event
 async def on_command_error(ctx, error):
     msg = "**[ERROR]** %s" % (error)
     logging.warning(msg)
     await ctx.send(msg)
     raise
-
+'''
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
 # ------------------------------------------------------------------------------
@@ -766,4 +768,3 @@ init_logger()
 f = open(token_file, "r")
 TOKEN = f.read()
 bot.run(TOKEN)
-SPELL.word_frequency.load_text_file("STFC_dict.txt")
