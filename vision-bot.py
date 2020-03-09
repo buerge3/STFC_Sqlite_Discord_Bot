@@ -240,8 +240,10 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
     success_count = 0;
     warn_count = 0;
     power_err_count = 0;
-    # Store the data for each name in the database
+
     for i in range(0, len(names_list)):
+
+        ## should name go into the LVE database or the backlog?
         target = ""
         if "DELETE_ME" in names_list[i]:
             target="backlog"
@@ -255,6 +257,7 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
         if i < len(lv_list) and i < len(power_list):
             key = get_key(names_list[i].lower())
 
+            ## if data for this player has already been entered today, skip this player
             sql = '''SELECT * FROM LVE WHERE PlayerKey={} AND Date="{}"'''.format(key, datetime.datetime.now().strftime("%Y-%m-%d"))
             logging.debug("SQL: " + sql)
             cur.execute(sql)
@@ -263,6 +266,22 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
                 warn_count += 1
                 err_msg = "**[WARNING]** Data for player {} has already been entered today. Skipping this player...".format(names_list[i])
                 logging.warning(err_msg)
+                await ctx.send(err_msg)
+                continue
+
+            ## verify that both level and power are valid integers
+            try:
+                int(lv_list[i])
+            except ValueError as Err:
+                err_msg = "**[ERROR]** The level of player {} is \"{}\", which is not a number.".format(names_list[i], lv_list[i]);
+                logging.warning(err_msg, exc_info=True)
+                await ctx.send(err_msg)
+                continue
+            try:
+                int(str(power_list[i]).replace(',', ''))
+            except ValueError as Err:
+                err_msg = "**[ERROR]** The power of player {} is \"{}\", which is not a number.".format(names_list[i], power_list[i]);
+                logging.warning(err_msg, exc_info=True)
                 await ctx.send(err_msg)
                 continue
 
@@ -296,29 +315,22 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
                         await ctx.send(err_msg)
                         continue
 
-            try:
-                if (target == "LVE"):
-                    sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(key,
-                        datetime.datetime.now().strftime("%Y-%m-%d"),
-                        team,
-                        int(lv_list[i]),
-                        int(str(power_list[i]).replace(',', '')))
-                    logging.debug("SQL: " + str(sql))
-                    cur.execute(sql)
-                else:
-                    #sql = '''INSERT INTO {} (Name, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, names_list[i],
-                    #    datetime.datetime.now().strftime("%Y-%m-%d"),
-                    #    team,
-                    #    int(lv_list[i]),
-                    #    int(power_list[i].replace(',', '')))
-                    await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, lv_list[i], power_list[i]))
-                
-            except ValueError as err:
-                #err_msg = "**[ERROR]** Cannot interpret the power of player {} as an integer; Power: {}".format(names_list[i], str(power_list[i]).replace(',', ''))
-                err_msg = "**[ERROR]** {}".format(err)
-                logging.warning(err_msg, exc_info=True)
-                await ctx.send(err_msg)
-                continue
+            ## store in the database
+            if (target == "LVE"):
+                sql = '''INSERT INTO LVE (PlayerKey, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(key,
+                    datetime.datetime.now().strftime("%Y-%m-%d"),
+                    team,
+                    int(lv_list[i]),
+                    int(str(power_list[i]).replace(',', '')))
+                logging.debug("SQL: " + str(sql))
+                cur.execute(sql)
+            else:
+                #sql = '''INSERT INTO {} (Name, Date, Alliance, Lv, Power) VALUES ("{}", "{}", "{}", "{}", "{}")'''.format(target, names_list[i],
+                #    datetime.datetime.now().strftime("%Y-%m-%d"),
+                #    team,
+                #    int(lv_list[i]),
+                #    int(power_list[i].replace(',', '')))
+                await store_in_backlog((names_list[i], datetime.datetime.now().strftime("%Y-%m-%d"), team, lv_list[i], power_list[i]))
 
             if target == "LVE":
                 success_count += 1
@@ -456,12 +468,10 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
         await ctx.send(msg)
         return 0, 0, 0
 
-    power_list = power.split('\n\n')
+    power_list = re.split(r"\n{1,2}", power)
     for i in range(len(power_list)):
         power_list[i] = re.sub("[^0-9,]", "", power_list[i])
 
-    print("\n\nPRINT A LIST\n\n")
-    print(*power_list, sep = "\n");  
     if (len(power_list) > 7):
         power_list = list(filter(None, power_list))
     else:
