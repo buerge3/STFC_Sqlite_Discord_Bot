@@ -451,16 +451,27 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
     try:
         power = pytesseract.image_to_string(im_power)
     except TesseractError as err:
-        fail_count += 7;
         msg = "**[ERROR]** {0}".format(err)
         logging.error(msg)
         await ctx.send(msg)
-        return 0
+        return 0, 0, 0
 
-    power_list = power.split('\n')
+    power_list = power.split('\n\n')
     for i in range(len(power_list)):
         power_list[i] = re.sub("[^0-9,]", "", power_list[i])
-    power_list = list(filter(None, power_list))
+
+    print("\n\nPRINT A LIST\n\n")
+    print(*power_list, sep = "\n");  
+    if (len(power_list) > 7):
+        power_list = list(filter(None, power_list))
+    else:
+        power_list = [0 if v is None else v for v in power_list]
+    if (len(power_list) != 7):
+        msg = "**[ERROR]** {0}".format("Failed to detect a power value for at least one player. Skipping this screenshot...");
+        logging.error(msg)
+        await ctx.send(msg)
+        return 0, 0, 0
+
     new_power_list = []
     for i in range(7):
         if not exclude[i]:
@@ -753,14 +764,13 @@ async def missing(ctx, team : str):
 @bot.event
 async def on_ready():
     logging.info("Logged in as " + bot.user.name)
-'''
+
 @bot.event
 async def on_command_error(ctx, error):
     msg = "**[ERROR]** %s" % (error)
     logging.warning(msg)
     await ctx.send(msg)
     raise
-'''
 # ------------------------------------------------------------------------------
 #                                 MAIN SCRIPT
 # ------------------------------------------------------------------------------
