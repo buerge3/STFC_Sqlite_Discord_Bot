@@ -690,7 +690,7 @@ async def guess(ctx, player : str, limit=3):
     sql = '''
         SELECT Name, Lv, Power, Date FROM
         (
-            SELECT D.Name, C.Date, C.Lv, C.Power, IFNULL (A.Power - B.Power, 0) AS Diff, IFNULL (A.Lv - B.Lv, 0) AS Lv_diff
+            SELECT IFNULL(E.Name, D.Name), C.Date, C.Lv, C.Power, IFNULL (A.Power - B.Power, 0) AS Diff, IFNULL (A.Lv - B.Lv, 0) AS Lv_diff
             FROM [backlog] A
                 INNER JOIN [LVE] C
                     ON A.Alliance = C.Alliance
@@ -709,6 +709,12 @@ async def guess(ctx, player : str, limit=3):
                 FROM [alias]
                 GROUP BY key
             ) D ON C.PlayerKey = D.Key
+            INNER JOIN
+            (
+                SELECT Name, key
+                FROM [display]
+                GROUP BY key
+            ) E ON A.PlayerKey = E.Key
 
             WHERE A.Name = "{}"
 
@@ -737,7 +743,7 @@ async def missing(ctx, team : str):
     sql = '''
         SELECT Name, Lv, Power, Date FROM
         (
-            SELECT C.Name, A.Date, A.Lv, A.Power
+            SELECT IFNULL(D.Name, C.Name) AS Name, A.Date, A.Lv, A.Power
             FROM [LVE] A
             INNER JOIN
             (
@@ -755,6 +761,12 @@ async def missing(ctx, team : str):
                 FROM [alias]
                 GROUP BY key
             ) C ON A.PlayerKey = C.Key
+            INNER JOIN
+            (
+                SELECT Name, key
+                FROM [display]
+                GROUP BY key
+            ) D ON A.PlayerKey = D.Key
 
         )
         ORDER BY Power DESC
