@@ -134,8 +134,8 @@ async def player(ctx, ppl : str):
     alias_string = ", ".join(alias_list)
     if (len(list_o_names) > 4):
         alias_string += "... (+%s more)" % (len(list_o_names) - len(alias_list) - 1)
-    else:
-        print("list_o_names is %d long" % len(list_o_names))
+    #else:
+        #print("list_o_names is %d long" % len(list_o_names))
     if (len(alias_list) > 0):
         alias_string = "\n  Also known as: " + alias_string
 
@@ -157,6 +157,35 @@ async def player(ctx, ppl : str):
         msg += "\n  Growth: %s (%s) per week" % (human_format(growth_per_week), '{:.2%}'.format(percent_growth_per_week))
 
     msg += alias_string;
+
+    # get lve fam birthday
+    sql5 = '''
+        SELECT Date, Lv
+        FROM [LVE] A
+        INNER JOIN
+        (
+            SELECT Alliance, MIN(Date) AS minDate
+            FROM [LVE]
+            GROUP BY Alliance
+        ) B ON A.Alliance = B.Alliance
+        INNER JOIN
+        (
+            SELECT PlayerKey, MIN(Date) AS minDate
+            FROM [LVE]
+            GROUP BY PlayerKey
+        ) C ON
+            A.PlayerKey="{}" AND
+            A.PlayerKey = C.PlayerKey AND
+            julianday(B.minDate, '+2 days') < julianday(C.minDate) AND
+            A.Date = C.minDate
+    '''.format(str(key))
+    logging.debug("SQL: " + sql5)
+    cur.execute(sql5)
+    birthday = cur.fetchone()
+    if (birthday is not None):
+        msg += "\n  LVE Birthday: joined on %s when lv %d" % (birthday[0], birthday[1])
+
+
 
     logging.info(msg)
 
