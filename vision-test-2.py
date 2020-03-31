@@ -100,6 +100,9 @@ def process_name(im, names_list, level_list):
         lv, name = text.split(' ', 1)
         name = name.replace(" ", "_")
         name = re.sub(r'^[0-9]+_', '', name)
+        heart_match = re.search(r"[a-zA-Z0-9]", name); # check for extra whitespace created by hearts
+        if (bool(heart_match)):
+            name = name[heart_match.start():] # handle extra whitespace created by hearts
         level_list.append(lv)
         names_list.append(name)
         return True

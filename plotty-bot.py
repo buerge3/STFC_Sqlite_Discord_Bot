@@ -462,7 +462,21 @@ async def roster(ctx, team : str, options='-g'):
     async with ctx.message.channel.typing():
 
         for key in query_res:
-            sql2 = '''SELECT Power, Date FROM LVE WHERE PlayerKey="{}" AND Power NOT IN (SELECT Power FROM LVE WHERE PlayerKey="{}" AND Date="{}") ORDER BY Date DESC LIMIT 1;'''.format(key[0], key[0], datetime.datetime.now().strftime("%Y-%m-%d"))
+            sql2 = '''
+                SELECT Power, Date
+                FROM [LVE] A
+                WHERE PlayerKey="{}"
+                AND Power NOT IN (
+                    SELECT Power
+                    FROM (
+                        SELECT MAX(Date) AS max, Power
+                        FROM [LVE] B
+                        WHERE B.PlayerKey = A.PlayerKey
+                        )
+                    )
+                ORDER BY Date DESC
+                LIMIT 1
+            '''.format(key[0])
             logging.debug('SQL: ' + sql2)
             cur.execute(sql2)
             recent = cur.fetchone()

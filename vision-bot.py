@@ -179,6 +179,9 @@ async def process_name(ctx, im, names_list, level_list):
         lv, name = text.split(' ', 1)
         name = name.replace(" ", "_")
         name = re.sub(r'^[0-9]+_', '', name)
+        heart_match = re.search(r"[a-zA-Z0-9]", name); # check for extra whitespace created by hearts
+        if (bool(heart_match)):
+            name = name[heart_match.start():] # handle extra whitespace created by hearts
         level_list.append(lv)
         names_list.append(name)
         return True
@@ -536,7 +539,9 @@ async def add(ctx):
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         key = get_key(arg.lower())
 
-    SPELL.word_frequency.load_words(args)
+        SPELL.word_frequency.load_words([arg.lower()])
+
+    #SPELL.word_frequency.load_words(args)
     await store_in_db_from_backlog(ctx, args, True);
 
     file.close()
