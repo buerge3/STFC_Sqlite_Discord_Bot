@@ -81,6 +81,7 @@ async def add_name_to_dict(ctx, new_name):
     file = open("STFC_dict.txt", "ab")
     name_utf8 = new_name.encode('UTF-8')
     file.write(name_utf8 + "\n".encode('UTF-8'))
+    SPELL.word_frequency.load_words([arg.lower()])
     #add_name_to_alias(old_name)
     msg = 'Added \'' + new_name + '\' to the dictionary'
     logging.info(msg)
@@ -538,8 +539,6 @@ async def add(ctx):
 
         # Get a key for the new entry, or the key for the old name if the name is already in the database
         key = get_key(arg.lower())
-
-        SPELL.word_frequency.load_words([arg.lower()])
 
     #SPELL.word_frequency.load_words(args)
     await store_in_db_from_backlog(ctx, args, True);
