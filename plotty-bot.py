@@ -219,7 +219,7 @@ async def player(ctx, ppl : str):
 
     await ctx.send(msg, file=discord.File(img_save_name))
 
-@bot.command(brief="Plot the growth of multiple players", description="Plot the growth of the specified players on a single graph", aliases=["players", "plot-many", "plot-several", "plot-multiple"])
+@bot.command(brief="Plot the growth of multiple players", description="Plot the growth of the specified players on a single graph", aliases=["players", "plot-many", "plot-several", "plot-multiple", "plot-players"])
 async def compare(ctx, *argv):
     args = [];
     for arg in argv:

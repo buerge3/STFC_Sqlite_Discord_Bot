@@ -81,7 +81,7 @@ async def add_name_to_dict(ctx, new_name):
     file = open("STFC_dict.txt", "ab")
     name_utf8 = new_name.encode('UTF-8')
     file.write(name_utf8 + "\n".encode('UTF-8'))
-    SPELL.word_frequency.load_words([arg.lower()])
+    SPELL.word_frequency.load_words([new_name.lower()])
     #add_name_to_alias(old_name)
     msg = 'Added \'' + new_name + '\' to the dictionary'
     logging.info(msg)
@@ -148,7 +148,8 @@ def apply_img_mask(im, rgb, x_percent):
     x_cutoff = math.floor(width * x_percent)
     for x in range(width):
         for y in range(height):
-            r,g,b = im.getpixel((x,y))
+            pixel = im.getpixel((x,y))
+            r,g,b = pixel[0], pixel[1], pixel[2]
             if r < rgb[0] or g < rgb[1] or b < rgb[2] or x < x_cutoff:
                 #out.putpixel((x,y), 0)
                 pixdata[x,y] = (255, 255, 255);
@@ -431,7 +432,7 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
         msg = '**[ERROR]** Attachment #{} is not an image. Please only submit images.'.format(i + 1)
         logging.error(msg)
         await ctx.send(msg)
-        return 0
+        return 0, 0, 0
     im_url = ctx.message.attachments[i].url
     await getImage(im_url)
     im = Image.open('latest.jpg')
@@ -443,7 +444,7 @@ async def process_screenshot(ctx, i, alliance_name, mispelled_list):
         msg = "**[ERROR]** Unable to process screenshot #{}; cause: failed to determine a suitable rgb filter".format(i + 1)
         logging.error(msg)
         await ctx.send(msg)
-        return 0
+        return 0, 0, 0
     else:
         msg = "Processing screenshot #{}:".format(i + 1)
         logging.info(msg)
