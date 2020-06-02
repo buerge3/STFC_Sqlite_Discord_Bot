@@ -118,7 +118,7 @@ async def get_rgb_filter(ctx, im):
         apply_img_mask(im_rgb, rgb, 0)
         try:
             word = pytesseract.image_to_string(im_rgb)
-        except TesseractError as err:
+        except Exception as err:
             msg = "**[ERROR]** {0}".format(err)
             logging.error(msg)
             await ctx.send(msg)
@@ -306,6 +306,12 @@ async def store_in_db(ctx, names_list, lv_list, power_list, team, check_power):
                     try:
                         power = int(str(power_list[i]).replace(',', ''))
                         delta_power = (power - recent[0]) / power
+                        if (abs(delta_power) > 0.1):
+                            # second chance: try removing just the first digit
+                            tmp_power = str(power_list[i]).replace(',', '')
+                            power_list[i] = tmp_power[1:]
+                            power = int(tmp_power[1:])
+                            delta_power = (power - recent[0]) / power
                         if (abs(delta_power) > 0.1):
                             target = "backlog"
                             err_msg = "**[WARNING]** The player {} has power {}, which seems wrong. If it is correct, please type !confirm {}".format(names_list[i], power_list[i], names_list[i])
