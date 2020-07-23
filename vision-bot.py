@@ -174,11 +174,11 @@ async def process_name(ctx, im, names_list, level_list):
     booboo = re.search(r"[1-5][\]\)l] ", text)
     if (bool(booboo)):
         text = text[booboo.start()] + "1 " + text[booboo.end():]
-    match = re.search(r"[0-9]+ \S", text)
+    match = re.search(r"[0-9]+ {1,3}\S", text)
     if (bool(match)):
         #text = re.sub(r'^\W+', '', text)
         text = text[match.start():]
-        lv, name = text.split(' ', 1)
+        lv, name = re.split(' {1,3}', text, 1)
         name = name.replace(" ", "_")
         name = re.sub(r'^[0-9]+_', '', name)
         heart_match = re.search(r"[a-zA-Z0-9]", name); # check for extra whitespace created by hearts
