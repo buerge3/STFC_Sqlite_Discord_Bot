@@ -16,8 +16,8 @@ import pytesseract                               # Tesseract OCR  - converts ima
 import math                                      # math           - performs basic math operations such as min/max
 from spellchecker import SpellChecker            # pyspellchecker - corrects player names using the dictionary
 import re                                        # re             - handles regular expressions
-import sys                                       # sys            - parses command line arguments
 import datetime                                  # datetime       - gets the current date and time
+import argparse                                  # argparse       - process command line arguments
 
 # MODIFIABLE PARAMTERS
 db_name = "test.db"
@@ -215,15 +215,9 @@ def store_in_db(names_list, lv_list, power_list, team):
             msg = "Name: " + names_list[i] + ",\tLv: " + lv_list[i] + ",\tPower: " + power_list[i]
             print(msg)
 
-
-# ------------------------------------------------------------------------------
-#                                 MAIN SCRIPT
-# ------------------------------------------------------------------------------
-if len(sys.argv) < 2:
-    print('Usage: python3 ./vision-test [image-name]')
-elif not conn:
-    print('Failed to connect to database. Stopping...')
-else:
+# upload
+# @param list of STFC screenshot paths
+def upload(ss):
     spell_checker = SpellChecker(language=None, case_sensitive=False)
     load_dictionary(spell_checker)
 
@@ -231,7 +225,7 @@ else:
     success_count = 0
     failed_count = 0
 
-    for img_path in sys.argv[1:]:
+    for img_path in ss:
         if not isImage(img_path):
             print('Please only submit images. Stopping...')
             break
@@ -269,7 +263,7 @@ else:
                 fail_count += 7;
                 msg = "**[ERROR]** {0}".format(err)
                 print(msg)
-                quit()
+                return
 
             power_list = power.split('\n')
             for i in range(len(power_list)):
@@ -280,3 +274,42 @@ else:
                 if not exclude[i]:
                     new_power_list.append(power_list[i])
             store_in_db(names_list, level_list, new_power_list, "TEST")
+
+# ------------------------------------------------------------------------------
+#                                 MAIN SCRIPT
+# ------------------------------------------------------------------------------
+parser = argparse.ArgumentParser()
+parser.add_argument('-u', '--upload', nargs='+')
+parser.add_argument('-a', '--add', nargs='+')
+parser.add_argument('-r', '--remove', nargs='+')
+parser.add_argument('-t', '--time', action='store_true')
+parser.add_argument('-c', '--correct', nargs=2)
+parser.add_argument('--confirm', nargs=1)
+parser.add_argument('-s', '--status', nargs=1)
+parser.add_argument('-g', '--guess', nargs=1)
+parser.add_argument('-m', '--missing', nargs=1)
+args = parser.parse_args()
+if args is False:
+    print('Something went wrong. Stopping...')
+elif not conn:
+    print('Failed to connect to database. Stopping...')
+else:
+    if args.upload is not None:
+        upload(args.upload)
+    elif args.add is not None:
+        for arg in args.add:
+            add_player(arg)
+    elif args.remove is not None:
+        print("remove is not yet implemented")
+    elif args.time is True:
+        print("time is not yet implemented")
+    elif args.correct is not None:
+        print("correct is not yet implemented")
+    elif args.confirm is not None:
+        print("confirm is not yet implemented")
+    elif args.status is not None:
+        print("status is not yet implemented")
+    elif args.guess is not None:
+        print("guess is not yet implemented")
+    elif args.missing is not None:
+        print("missing is not yet implemented")
